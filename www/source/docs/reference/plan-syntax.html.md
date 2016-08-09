@@ -110,13 +110,22 @@ that depends on your package.
   pkg_include_dirs=(include)
   ~~~
 
-pkg_binary_dirs
+pkg_bin_dirs
 : Optional. An array of paths, relative to the final install of the software,
 where binaries can be found. Used to populate `PATH` for software
 that depends on your package.
 
   ~~~
-  pkg_binary_dirs=(bin)
+  pkg_bin_dirs=(bin)
+  ~~~
+
+pkg_pconfig_dirs
+: Optional. An array of paths, relative to the final install of the
+software, where pkg-config metadata (.pc files) can be found. Used to
+populate `PKG_CONFIG_PATH` for software that depends on your package.
+
+  ~~~
+  pkg_pconfig_dirs=(lib/pkgconfig)
   ~~~
 
 pkg_svc_run
@@ -246,6 +255,9 @@ do_download()
 do_verify()
 : The default implementation tries to verify the checksum specified in the plan against the computed checksum after downloading the source tarball to disk. If the specified checksum doesn't match the computed checksum, then an error and a message specifying the mismatch will be printed to stderr. You should not need to override this behavior unless your package does not download any files.
 
+do_check()
+: The default implementation runs nothing during post-compile.  An example of a command you might use in this callback is `make test`. To use this callback, two conditions must be true. A) `do_check()` function has been declared, B) `DO_CHECK` environment variable exists and set to true, `env DO_CHECK=true`.
+
 do_clean()
 : The default implementation removes the *HAB_CACHE_SRC_PATH/$pkg_dirname* folder in case there was a previously-built version of your package installed on disk. This ensures you start with a clean build environment.
 
@@ -256,7 +268,7 @@ do_prepare()
 : There is no default implementation of this callback. At this point in the build process, the tarball source has been downloaded, unpacked, and the build environment variables have been set, so you can use this callback to perform any actions before the package starts building, such as exporting variables, adding symlinks, and so on.
 
 do_build()
-: The default implementation is to update the prefix path for the configure script to use $pkg_prefix and then run `make` to compile the downloaded source. This means the script in the default implementation does `./configure --prefix=$pkg_prefix && make`. You should override this behavior if you have additional configuration changes to make or other software to build and install as part of building your package.  
+: The default implementation is to update the prefix path for the configure script to use $pkg_prefix and then run `make` to compile the downloaded source. This means the script in the default implementation does `./configure --prefix=$pkg_prefix && make`. You should override this behavior if you have additional configuration changes to make or other software to build and install as part of building your package.
 
 do_install()
 : The default implementation is to run `make install` on the source files and place the compiled binaries or libraries in *HAB_CACHE_SRC_PATH/$pkg_dirname*, which resolves to a path like `/hab/cache/src/packagename-version/`. It uses this location because of **do_build()** using the `--prefix` option when calling the configure script. You should override this behavior if you need to perform custom installation steps, such as copying files from HAB_CACHE_SRC_PATH to specific directories in your package, or installing pre-built binaries into your package.
@@ -396,8 +408,26 @@ svc_static_path
 svc_var_path
 : The location of any variable state data for the Habitat service.
 
+svc_user
+: The value of pkg_svc_user specified in a plan.
+
+svc_group
+: The value of pkg_svc_group specified in a plan.
+
+svc_user_default
+: The default user determined by the Habitat supervisor. `svc_user_default` will contain one of the following values, tested in order:
+- `svc_user` if specified in the plan
+- `hab` if the user exists
+- the current user id
+
+svc_group_default
+: The default group determined by the Habitat supervisor. `svc_group_default` will contain one of the following values, tested in order:
+- `svc_group` if specified in the plan
+- `hab` if the group exists
+- the effective group id
+
 ### cfg
-These are settings defined in your templatized configuration file. The values for those settings are pulled from the default.toml file included in your package.
+These are settings defined in your templatized configuration file. The values for those settings are pulled from the `default.toml` file included in your package. 
 
 ***
 
@@ -485,4 +515,4 @@ exit_with "Something bad happened" 55
 ~~~
 
 trim()
-: Trims leading and trailing whitespace characters from a bash variable.  
+: Trims leading and trailing whitespace characters from a bash variable.
