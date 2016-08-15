@@ -252,8 +252,8 @@ pub static SIG_HASH_TYPE: &'static str = "BLAKE2b";
 pub static CACHE_KEY_PATH_ENV_VAR: &'static str = "HAB_CACHE_KEY_PATH";
 
 /// Create secret key files with these permissions
-static PUBLIC_KEY_PERMISSIONS: &'static str = "0400";
-static SECRET_KEY_PERMISSIONS: &'static str = "0400";
+static PUBLIC_KEY_PERMISSIONS: u32 = 0o400;
+static SECRET_KEY_PERMISSIONS: u32 = 0o400;
 
 pub static HART_FORMAT_VERSION: &'static str = "HART-1";
 pub static BOX_FORMAT_VERSION: &'static str = "BOX-1";
@@ -285,7 +285,6 @@ pub fn init() {
 
 #[cfg(test)]
 pub mod test_support {
-    use std::env;
     use std::io::Read;
     use std::fs::File;
     use std::path::PathBuf;
@@ -295,21 +294,12 @@ pub mod test_support {
     use error as herror;
 
     pub fn fixture(name: &str) -> PathBuf {
-        let file = env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("tests")
-            .join("fixtures")
-            .join(name);
-        if !file.is_file() {
-            panic!("No fixture {} exists!", file.display());
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join(name);
+        if !path.is_file() {
+            panic!("Fixture '{}' not found at: {:?}", name, path);
         }
-        file
+        path
     }
 
     pub fn fixture_as_string(name: &str) -> String {

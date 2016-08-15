@@ -6,8 +6,8 @@ set -eu
 if [ -n "${DEBUG:-}" ]; then set -x; fi
 
 # Download URL for a `core/hab` Habitat slim archive
-_url='https://api.bintray.com/content/habitat/stable/linux/x86_64/hab-$latest-x86_64-linux.tar.gz'
-_q="?bt_package=hab-x86_64-linux"
+_url='https://api.bintray.com/content/habitat/stable/darwin/x86_64/hab-$latest-x86_64-darwin.zip'
+_q="?bt_package=hab-x86_64-darwin"
 hab_url="${_url}$_q"
 # Download URL for the shasum digest
 sha_url="${_url}.sha256sum$_q"
@@ -21,15 +21,15 @@ trap 'rm -rf $workdir; exit $?' INT TERM EXIT
 rm -rf "$workdir"
 mkdir -p "$workdir"
 cd "$workdir"
-wget $hab_url -O $workdir/hab-latest.tar.gz
-wget $sha_url -O $workdir/hab-latest.tar.gz.sha256sum
+wget $hab_url -O $workdir/hab-latest.zip
+wget $sha_url -O $workdir/hab-latest.zip.sha256sum
 
 # Set the target file name for the slim archive
-archive="$workdir/$(cat hab-latest.tar.gz.sha256sum | cut -d ' ' -f 3)"
-mv -v "$workdir/hab-latest.tar.gz" "$archive"
+archive="$workdir/$(cat hab-latest.zip.sha256sum | cut -d ' ' -f 3)"
+mv -v "$workdir/hab-latest.zip" "$archive"
 # Set the target file name for the shasum digest
 sha_file="${archive}.sha256sum"
-mv -v "$workdir/hab-latest.tar.gz.sha256sum" "${archive}.sha256sum"
+mv -v "$workdir/hab-latest.zip.sha256sum" "${archive}.sha256sum"
 
 # If gnupg is available, verify that the shasum digest is properly signed
 if command -v gpg >/dev/null; then
@@ -44,15 +44,11 @@ if command -v gpg >/dev/null; then
 fi
 
 # Verify the provided shasum digest matches the downloaded archive
-sha256sum -c "$sha_file"
+shasum -a 256 -c "$sha_file"
 
 # Extract the archive into a temporary directory
-zcat "$archive" | tar x -C "$workdir"
+unzip "$archive" -d "$workdir"
 # Directory containing the binary
-archive_dir="$(echo $archive | sed 's/.tar.gz$//')"
-# Install the latest release unless a specific version was provided
-ident="core/hab"
-if [ -n "${1:-}" ]; then ident="$ident/$1"; fi
-# Install hab release using the extracted version and add/update symlink
-"$archive_dir/hab" install "$ident"
-"$archive_dir/hab" pkg binlink "$ident" hab
+archive_dir="$(echo $archive | sed 's/.zip$//')"
+# Install latest hab release
+install -v "$archive_dir/hab" /bin/hab

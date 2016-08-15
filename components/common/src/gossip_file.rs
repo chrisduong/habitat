@@ -23,7 +23,7 @@ use std::str::FromStr;
 use hcore::crypto::{BoxKeyPair, default_cache_key_path};
 use hcore::fs;
 use hcore::service::ServiceGroup;
-use hcore::util::perm::{set_owner_and_group, set_permissions};
+use hcore::util::perm::{set_owner, set_permissions};
 use openssl::crypto::hash as openssl_hash;
 use rustc_serialize::{Encodable, Encoder};
 use rustc_serialize::hex::ToHex;
@@ -35,7 +35,7 @@ const IDEMPOTENCY_INTERVAL_MINUTES: i64 = 5;
 
 pub const GOSSIP_TOML: &'static str = "gossip.toml";
 
-pub const UPLOADED_FILE_PERMISSIONS: &'static str = "0770";
+pub const UPLOADED_FILE_PERMISSIONS: u32 = 0o770;
 
 /// The gossip file struct.
 #[derive(Clone, Debug, Eq, RustcDecodable, RustcEncodable)]
@@ -150,9 +150,9 @@ impl GossipFile {
         Ok(cf)
     }
 
-    /// Updates this struct against another `GossipFile`. If true is returned, we have changed the gossip file
-    /// and the rumour should stay hot. If false is returned, nothing has changed and the rumour
-    /// can start to go cold. The algorithm is as follows:
+    /// Updates this struct against another `GossipFile`. If true is returned, we have changed the
+    /// gossip file and the rumour should stay hot. If false is returned, nothing has changed and
+    /// the rumour can start to go cold. The algorithm is as follows:
     ///
     /// * The `other` has a higher version number, use its data as our data
     /// * If the version numbers are identical but the data differs, loudly warn and return false
@@ -233,7 +233,7 @@ impl GossipFile {
                 }
             }
             try!(std::fs::rename(&new_filename, self.on_disk_path()));
-            try!(set_owner_and_group(&self.on_disk_path(), svc_user, svc_group));
+            try!(set_owner(&self.on_disk_path(), svc_user, svc_group));
             try!(set_permissions(&self.on_disk_path(), UPLOADED_FILE_PERMISSIONS));
             self.written = true;
             Ok(true)
@@ -462,7 +462,6 @@ impl GossipFileList {
 
 #[cfg(test)]
 mod test {
-    use std::env;
     use std::io::prelude::*;
     use std::fs::File;
     use std::path::PathBuf;
@@ -477,17 +476,7 @@ mod test {
     use gossip_file::{GossipFile, FileWriteRetry, GOSSIP_TOML};
 
     fn fixture(name: &str) -> PathBuf {
-        env::current_exe()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("tests")
-            .join("fixtures")
-            .join(name)
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures").join(name)
     }
 
     #[test]
