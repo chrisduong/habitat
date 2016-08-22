@@ -1,6 +1,6 @@
 [package]
 name = "habitat_common"
-version = "0.8.0"
+version = "0.0.0"
 authors = ["Adam Jacob <adam@chef.io>", "Jamie Winsor <reset@chef.io>", "Fletcher Nichol <fnichol@chef.io>", "Joshua Timberman <joshua@chef.io>", "Dave Parfitt <dparfitt@chef.io>"]
 workspace = "../../"
 
@@ -18,7 +18,7 @@ toml = "*"
 path = "../core"
 
 [dependencies.habitat_depot_client]
-path = "../depot-client"
+path = "../builder-depot-client"
 
 [dependencies.habitat_builder_protocol]
 path = "../builder-protocol"

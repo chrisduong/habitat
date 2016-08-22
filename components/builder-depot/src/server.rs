@@ -949,8 +949,8 @@ fn list_packages(depot: &Depot, req: &mut Request) -> IronResult<Response> {
         ident_from_params(params).to_string()
     };
 
-    if let Some(view) = params.find("view") {
-        match depot.datastore.views.view_pkg_idx.all(view, &ident) {
+    if let Some(channel) = params.find("channel") {
+        match depot.datastore.channels.channel_pkg_idx.all(channel, &ident) {
             Ok(packages) => {
                 let count = depot.datastore.packages.index.count(&ident).unwrap();
                 let body = json::encode(&packages).unwrap();
@@ -1018,9 +1018,9 @@ fn list_packages(depot: &Depot, req: &mut Request) -> IronResult<Response> {
     }
 }
 
-fn list_views(depot: &Depot, _req: &mut Request) -> IronResult<Response> {
-    let views = try!(depot.datastore.views.all());
-    let body = json::encode(&views).unwrap();
+fn list_channels(depot: &Depot, _req: &mut Request) -> IronResult<Response> {
+    let channels = try!(depot.datastore.channels.all());
+    let body = json::encode(&channels).unwrap();
 
     let mut response = Response::with((status::Ok, body));
     dont_cache_response(&mut response);
@@ -1031,9 +1031,9 @@ fn show_package(depot: &Depot, req: &mut Request) -> IronResult<Response> {
     let params = req.extensions.get::<Router>().unwrap();
     let mut ident = ident_from_params(params);
 
-    if let Some(view) = params.find("view") {
+    if let Some(channel) = params.find("channel") {
         if !ident.fully_qualified() {
-            match depot.datastore.views.view_pkg_idx.latest(view, &ident.to_string()) {
+            match depot.datastore.channels.channel_pkg_idx.latest(channel, &ident.to_string()) {
                 Ok(ident) => {
                     match depot.datastore.packages.find(&ident) {
                         Ok(pkg) => render_package(&pkg, false),
@@ -1053,7 +1053,7 @@ fn show_package(depot: &Depot, req: &mut Request) -> IronResult<Response> {
                 }
             }
         } else {
-            match depot.datastore.views.view_pkg_idx.is_member(view, &ident) {
+            match depot.datastore.channels.channel_pkg_idx.is_member(channel, &ident) {
                 Ok(true) => {
                     match depot.datastore.packages.find(&ident) {
                         Ok(pkg) => render_package(&pkg, false),
@@ -1159,9 +1159,9 @@ fn promote_package(depot: &Depot, req: &mut Request) -> IronResult<Response> {
     };
 
     let params = req.extensions.get::<Router>().unwrap();
-    let view = params.find("view").unwrap();
+    let channel = params.find("channel").unwrap();
 
-    match depot.datastore.views.is_member(view) {
+    match depot.datastore.channels.is_member(channel) {
         Ok(true) => {
             let ident = ident_from_params(params);
             if !check_origin_access(&depot, session.get_id(), &ident.get_origin()) {
@@ -1169,7 +1169,7 @@ fn promote_package(depot: &Depot, req: &mut Request) -> IronResult<Response> {
             }
             match depot.datastore.packages.find(&ident) {
                 Ok(package) => {
-                    depot.datastore.views.associate(view, &package).unwrap();
+                    depot.datastore.channels.associate(channel, &package).unwrap();
                     Ok(Response::with(status::Ok))
                 }
                 Err(dbcache::Error::EntityNotFound) => Ok(Response::with(status::NotFound)),
@@ -1296,25 +1296,85 @@ pub fn router(depot: Arc<Depot>) -> Result<Chain> {
     let depot25 = depot.clone();
     let depot26 = depot.clone();
     let depot27 = depot.clone();
+    let depot28 = depot.clone();
+    let depot29 = depot.clone();
+    let depot30 = depot.clone();
+    let depot31 = depot.clone();
+    let depot32 = depot.clone();
+    let depot33 = depot.clone();
+    let depot34 = depot.clone();
+    let depot35 = depot.clone();
+    let depot36 = depot.clone();
+    let depot37 = depot.clone();
+    let depot38 = depot.clone();
+    let depot39 = depot.clone();
+    let depot40 = depot.clone();
+    let depot41 = depot.clone();
+    let depot42 = depot.clone();
+    let depot43 = depot.clone();
+
 
     let router = router!(
-        get "/views" => move |r: &mut Request| list_views(&depot1, r),
-        get "/views/:view/pkgs/:origin" => move |r: &mut Request| list_packages(&depot2, r),
-        get "/views/:view/pkgs/:origin/:pkg" => move |r: &mut Request| list_packages(&depot3, r),
-        get "/views/:view/pkgs/:origin/:pkg/latest" => {
+        get "/channels" => move |r: &mut Request| list_channels(&depot28, r),
+        get "/channels/:channel/pkgs/:origin" => move |r: &mut Request| list_packages(&depot29, r),
+        get "/channels/:channel/pkgs/:origin/:pkg" => {
+            move |r: &mut Request| list_packages(&depot30, r)
+        },
+        get "/channels/:channel/pkgs/:origin/:pkg/latest" => {
+            move |r: &mut Request| show_package(&depot31, r)
+        },
+        get "/channels/:channel/pkgs/:origin/:pkg/:version" => {
+            move |r: &mut Request| list_packages(&depot32, r)
+        },
+        get "/channels/:channel/pkgs/:origin/:pkg/:version/latest" => {
+            move |r: &mut Request| show_package(&depot33, r)
+        },
+        get "/channels/:channel/pkgs/:origin/:pkg/:version/:release" => {
+            move |r: &mut Request| show_package(&depot34, r)
+        },
+        post "/channels/:channel/pkgs/:origin/:pkg/:version/:release/promote" => {
+            move |r: &mut Request| promote_package(&depot35, r)
+        },
+        get "/channels/:channel/pkgs/:origin/:pkg/:version/:release/download" => {
+            move |r: &mut Request| download_package(&depot36, r)
+        },
+        get "/channels/:channel/origins/:origin/keys" => move |r: &mut Request| list_origin_keys(&depot37, r),
+        get "/channels/:channel/origins/:origin/keys/latest" => {
+            move |r: &mut Request| download_latest_origin_key(&depot38, r)
+        },
+        get "/channels/:channel/origins/:origin/keys/:revision" => {
+            move |r: &mut Request| download_origin_key(&depot39, r)
+        },
+
+        // JW: `views` is a deprecated term and now an alias for `channels`. These routes should be
+        // removed at a later date.
+        get "/views" => move |r: &mut Request| list_channels(&depot1, r),
+        get "/views/:channel/pkgs/:origin" => move |r: &mut Request| list_packages(&depot2, r),
+        get "/views/:channel/pkgs/:origin/:pkg" => move |r: &mut Request| list_packages(&depot3, r),
+        get "/views/:channel/pkgs/:origin/:pkg/latest" => {
             move |r: &mut Request| show_package(&depot4, r)
         },
-        get "/views/:view/pkgs/:origin/:pkg/:version" => {
+        get "/views/:channel/pkgs/:origin/:pkg/:version" => {
             move |r: &mut Request| list_packages(&depot5, r)
         },
-        get "/views/:view/pkgs/:origin/:pkg/:version/latest" => {
+        get "/views/:channel/pkgs/:origin/:pkg/:version/latest" => {
             move |r: &mut Request| show_package(&depot6, r)
         },
-        get "/views/:view/pkgs/:origin/:pkg/:version/:release" => {
+        get "/views/:channel/pkgs/:origin/:pkg/:version/:release" => {
             move |r: &mut Request| show_package(&depot7, r)
         },
-        post "/views/:view/pkgs/:origin/:pkg/:version/:release/promote" => {
+        post "/views/:channel/pkgs/:origin/:pkg/:version/:release/promote" => {
             move |r: &mut Request| promote_package(&depot8, r)
+        },
+        get "/views/:view/pkgs/:origin/:pkg/:version/:release/download" => {
+            move |r: &mut Request| download_package(&depot40, r)
+        },
+        get "/views/:view/origins/:origin/keys" => move |r: &mut Request| list_origin_keys(&depot41, r),
+        get "/views/:view/origins/:origin/keys/latest" => {
+            move |r: &mut Request| download_latest_origin_key(&depot42, r)
+        },
+        get "/views/:view/origins/:origin/keys/:revision" => {
+            move |r: &mut Request| download_origin_key(&depot43, r)
         },
 
         get "/pkgs/search/:query" => move |r: &mut Request| search_packages(&depot9, r),
