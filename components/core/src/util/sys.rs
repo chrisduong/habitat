@@ -12,51 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::ffi::CStr;
-use std::mem;
 use std::net::{IpAddr, UdpSocket};
 
-use libc;
+use error::Result;
 
-use errno::errno;
-use error::{Error, Result};
+pub use os::system::{uname, Uname};
 
 static GOOGLE_DNS: &'static str = "8.8.8.8:53";
 
 pub fn ip() -> Result<IpAddr> {
     let socket = try!(UdpSocket::bind("0.0.0.0:0"));
     let _ = try!(socket.connect(GOOGLE_DNS));
-    let addr =try!(socket.local_addr());
+    let addr = try!(socket.local_addr());
     Ok(addr.ip())
-}
-
-
-#[derive(Debug)]
-pub struct Uname {
-    pub sys_name: String,
-    pub node_name: String,
-    pub release: String,
-    pub version: String,
-    pub machine: String,
-}
-
-pub fn uname() -> Result<Uname> {
-    unsafe { uname_libc() }
-}
-
-unsafe fn uname_libc() -> Result<Uname> {
-    let mut utsname: libc::utsname = mem::uninitialized();
-    let rv = libc::uname(&mut utsname);
-    if rv < 0 {
-        let errno = errno();
-        let code = errno.0 as i32;
-        return Err(Error::UnameFailed(format!("Error {} when calling uname: {}", code, errno)));
-    }
-    Ok(Uname {
-        sys_name: CStr::from_ptr(utsname.sysname.as_ptr()).to_string_lossy().into_owned(),
-        node_name: CStr::from_ptr(utsname.nodename.as_ptr()).to_string_lossy().into_owned(),
-        release: CStr::from_ptr(utsname.release.as_ptr()).to_string_lossy().into_owned(),
-        version: CStr::from_ptr(utsname.version.as_ptr()).to_string_lossy().into_owned(),
-        machine: CStr::from_ptr(utsname.machine.as_ptr()).to_string_lossy().into_owned(),
-    })
 }

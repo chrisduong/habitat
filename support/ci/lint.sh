@@ -47,7 +47,7 @@ exit_with() {
 }
 
 program=$(basename $0)
-rf_version="0.5.0"
+rf_version="0.6.0"
 
 # Fix commit range in Travis, if set.
 # See: https://github.com/travis-ci/travis-ci/issues/4596
@@ -59,8 +59,8 @@ if ! command -v rustfmt >/dev/null; then
 fi
 
 info "Checking for version $rf_version of rustfmt"
-actual="$(rustfmt --version)"
-if [[ "$actual" != "0.5.0" ]]; then
+actual="$(rustfmt --version | cut -d ' ' -f 1)"
+if [[ "$actual" != "$rf_version" ]]; then
   exit_with "\`rustfmt' version $actual doesn't match expected: $rf_version" 2
 fi
 

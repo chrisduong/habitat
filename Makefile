@@ -32,11 +32,14 @@ endif
 
 BIN = director hab sup
 LIB = builder-dbcache builder-protocol common core builder-depot-client http-client net
-SRV = builder-api builder-depot builder-jobsrv builder-sessionsrv builder-vault builder-worker
+SRV = builder-api builder-admin builder-depot builder-router builder-jobsrv builder-sessionsrv builder-vault builder-worker
 ALL = $(BIN) $(LIB) $(SRV)
 VERSION := $(shell cat VERSION)
 
 .DEFAULT_GOAL := build-bin
+
+bldr-build: $(addprefix bldr-build-,$(SRV))
+.PHONY: bldr-build
 
 build: build-bin build-lib build-srv ## builds all the components
 build-all: build
@@ -96,7 +99,7 @@ help:
 .PHONY: help
 
 api-shell: image ## launches a development shell running the API
-	$(api_run) sh -c 'cp /src/support/run-api.sh /usr/local/sbin/api; api start; bash'
+	$(api_run) sh -c 'cp /src/support/run-api.sh /usr/local/sbin/api && api build && api start && bash'
 .PHONY: api-shell
 
 shell: image ## launches a development shell
@@ -157,6 +160,17 @@ build-$1: image ## builds the $1 component
 
 endef
 $(foreach component,$(ALL),$(eval $(call BUILD,$(component))))
+
+define BLDR_BUILD
+bldr-build-$1: image ## builds the $1 component
+	cd components/$1 && cargo build
+.PHONY: bldr-build-$1
+
+endef
+$(foreach component,$(ALL),$(eval $(call BLDR_BUILD,$(component))))
+
+bldr-run: bldr-build
+	support/forego start -f support/Procfile.bldr
 
 define UNIT
 unit-$1: image ## executes the $1 component's unit test suite
