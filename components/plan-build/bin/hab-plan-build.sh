@@ -1993,11 +1993,14 @@ do_default_build_config() {
   return 0
 }
 
-# Write out the `$pkg_prefix/run` file. If a file named `hooks/run` exists, we
-# skip this step. Otherwise, we look for `$pkg_svc_run`, and use that.
+# Write out the `$pkg_prefix/run` file. If a file named `hooks/run`
+# exists, we skip this step. Otherwise, we look for `$pkg_svc_run`,
+# and use that. We assume that the binary used in the `$pkg_svc_run`
+# command is set in the $PATH.
 #
-# If the `$pkg_svc_user` is set to a value that is not `root`, we change
-# the service to be run under that user before we start it.
+# This will write a `run` script that uses `chpst` to run the command
+# as the `$pkg_svc_user` and `$pkg_svc_group`. These are `hab` by
+# default.
 #
 # Delegates most of the implementation to the `do_default_build_server()`
 # function.
@@ -2009,32 +2012,27 @@ do_build_service() {
 # Default implementation of the `do_build_service()` phase.
 do_default_build_service() {
   build_line "Writing service management scripts"
-  if [[ -f "$PLAN_CONTEXT/hooks/run" ]]; then
+  if [[ -f "${PLAN_CONTEXT}/hooks/run" ]]; then
+    build_line "Using run hook ${PLAN_CONTEXT}/hooks/run"
     return 0
   else
     if [[ -n "${pkg_svc_run}" ]]; then
-      if [[ -n "$pkg_svc_user" && "${pkg_svc_user}" != "root" ]]; then
-        cat <<EOT >> $pkg_prefix/run
+      # We use chpst to ensure that the script works outside `hab-sup`
+      # for debugging purposes, or under a `hab-director`.
+      build_line "Writing ${pkg_prefix}/run script to run ${pkg_svc_run} as ${pkg_svc_user}:${pkg_svc_group}"
+      cat <<EOT >> $pkg_prefix/run
 #!/bin/sh
 cd $pkg_svc_path
 
 if [ "\$(whoami)" = "root" ]; then
   exec chpst \\
-    -U ${pkg_svc_user}:$pkg_svc_group \\
-    -u ${pkg_svc_user}:$pkg_svc_group \\
-    $pkg_prefix/$pkg_svc_run 2>&1
+    -U ${pkg_svc_user}:${pkg_svc_group} \\
+    -u ${pkg_svc_user}:${pkg_svc_group} \\
+    ${pkg_svc_run} 2>&1
 else
-  exec $pkg_prefix/$pkg_svc_run 2>&1
+  exec ${pkg_svc_run} 2>&1
 fi
 EOT
-      else
-        cat <<EOT >> $pkg_prefix/run
-#!/bin/sh
-cd $pkg_svc_path
-
-exec $pkg_prefix/$pkg_svc_run 2>&1
-EOT
-      fi
     fi
   fi
   return 0
@@ -2285,15 +2283,19 @@ if [[ -n "$HAB_ORIGIN" ]]; then
   pkg_origin="$HAB_ORIGIN"
 fi
 
-# `$pkg_origin` is a required metadata key
-if [[ -z "${pkg_origin}" ]]; then
-  exit_with "Failed to build. 'pkg_origin' must be set." 1
-fi
-
-# `$pkg_version` is a required metadata key
-if [[ -z "${pkg_version}" ]]; then
-  exit_with "Failed to build. 'pkg_version' must be set." 1
-fi
+# Test for all required metadata keys
+required_variables=(
+  pkg_name
+  pkg_origin
+  pkg_source
+  pkg_version
+)
+for var in "${required_variables[@]}"
+do
+  if [[ -z "${!var}" ]] ; then
+    exit_with "Failed to build. '${var}' must be set." 1
+  fi
+done
 
 # Pass over `$pkg_svc_run` to replace any `$pkg_name` placeholder tokens
 # from prior pkg_svc_* variables that were set before the Plan was loaded.

@@ -127,6 +127,7 @@ from the master branch on a bi-weekly schedule occurring every other Thursday.
   * hab-sup-static - `habitat/components/sup/static`
   * hab-director - `habitat/components/director`
   * hab-builder-api - `habitat/components/builder-api`
+  * hab-builder-admin - `habitat/components/builder-admin`
   * hab-builder-depot - `habitat/components/builder-depot`
   * hab-builder-jobsrv - `habitat/components/builder-jobsrv`
   * hab-builder-router - `habitat/components/builder-router`
@@ -191,13 +192,16 @@ target component.
 
 # How-To: Build Mac Components
 
-1. Turn on and enter virtual machine
+1. Ensure no pre-exiting old virtual machine, then turn on and enter the system
 
 	```
 	$ cd ~/code/habitat/components/hab/mac
+	$ vagrant destroy
 	$ vagrant up
 	$ vagrant ssh
 	```
+
+1. Have the secret core origin key ready for pasting into the terminal. The `mac-build.sh` script will interactively prompt for pasting the key contents if no core origin key is installed on the VM.
 
 1. Build Hab for Mac
 

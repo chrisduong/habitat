@@ -154,7 +154,7 @@ securitySchemes:
                                 "email": "reset@chef.io",
                                 "name": "reset",
                                 "id": 73089155726360582,
-                                "features": 0,
+                                "flags": 0,
                             }
 /jobs:
     post:
@@ -202,6 +202,11 @@ securitySchemes:
         get:
             securedBy: [oauth_2_0]
     /{invitationId}:
+        delete:
+            securedBy: [oauth_2_0]
+            responses:
+                204:
+                    description: Invitation successfully ignored
         put:
             securedBy: [oauth_2_0]
             responses:

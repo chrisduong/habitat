@@ -21,13 +21,16 @@ ifneq ($(IN_DOCKER),)
 	compose_cmd := env http_proxy= https_proxy= docker-compose
 	common_run := $(compose_cmd) run --rm $(run_args)
 	run := $(common_run) shell
-	api_run := $(common_run) -p 9636:9636 shell
-	docs_host := ${DOCKER_HOST}
+	bldr_run := $(common_run) -p 9636:9636 -p 8080:8080 shell
 	docs_run := $(common_run) -p 9633:9633 shell
 else
 	run :=
-	docs_host := 127.0.0.1
 	docs_run :=
+endif
+ifneq ($(DOCKER_HOST),)
+	docs_host := ${DOCKER_HOST}
+else
+	docs_host := 127.0.0.1
 endif
 
 BIN = director hab sup
@@ -98,10 +101,6 @@ help:
 	@perl -nle'print $& if m{^[a-zA-Z_-]+:.*?## .*$$}' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
 .PHONY: help
 
-api-shell: image ## launches a development shell running the API
-	$(api_run) sh -c 'cp /src/support/run-api.sh /usr/local/sbin/api && api build && api start && bash'
-.PHONY: api-shell
-
 shell: image ## launches a development shell
 	$(run)
 .PHONY: shell
@@ -109,7 +108,7 @@ shell: image ## launches a development shell
 serve-docs: docs ## serves the project documentation from an HTTP server
 	@echo "==> View the docs at:\n\n        http://`\
 		echo $(docs_host) | sed -e 's|^tcp://||' -e 's|:[0-9]\{1,\}$$||'`:9633/\n\n"
-	$(docs_run) sh -c 'set -e; cd ./components/sup/target/doc; python -m SimpleHTTPServer 9633;'
+	$(docs_run) sh -c 'set -e; cd ./target/doc; python -m SimpleHTTPServer 9633;'
 .PHONY: serve-docs
 
 ifneq ($(IN_DOCKER),)
@@ -145,10 +144,10 @@ changelog: image ## build the changelog
 docs: image ## build the docs
 	$(run) sh -c 'set -ex; \
 		cd components/sup && cargo doc && cd ../../ \
-		rustdoc --crate-name habitat_sup README.md -o ./components/sup/target/doc/habitat_sup; \
-		docco -e .sh -o components/sup/target/doc/habitat_sup/hab-plan-build components/plan-build/bin/hab-plan-build.sh; \
-		cp -r images ./components/sup/target/doc/habitat_sup; \
-		echo "<meta http-equiv=refresh content=0;url=habitat_sup/index.html>" > components/sup/target/doc/index.html;'
+		rustdoc --crate-name habitat_sup README.md -o ./target/doc/habitat_sup; \
+		docco -e .sh -o target/doc/habitat_sup/hab-plan-build components/plan-build/bin/hab-plan-build.sh; \
+		cp -r images ./target/doc/habitat_sup; \
+		echo "<meta http-equiv=refresh content=0;url=habitat_sup/index.html>" > target/doc/index.html;'
 
 tag-release:
 	sh -c 'git tag -a $(VERSION) -m \"$(VERSION)\"'
@@ -170,7 +169,11 @@ endef
 $(foreach component,$(ALL),$(eval $(call BLDR_BUILD,$(component))))
 
 bldr-run: bldr-build
-	support/forego start -f support/Procfile.bldr
+	support/mac/bin/forego start -f support/Procfile.mac -e support/bldr.env
+
+bldr-run-shell: build-srv ## launches a development shell running the API
+	$(bldr_run) sh -c '/src/support/linux/bin/forego start -f support/Procfile.linux -e support/bldr.env'
+.PHONY: bldr-run-shell
 
 define UNIT
 unit-$1: image ## executes the $1 component's unit test suite

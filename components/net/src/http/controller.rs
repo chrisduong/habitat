@@ -12,5 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+pub use super::headers::*;
 pub use super::middleware::*;
 pub use super::rendering::{render_json, render_net_error};

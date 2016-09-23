@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 
-version=0.6.0
+version=0.6.2
 
 if command -v rustfmt >/dev/null; then
   if [[ $(rustfmt --version) = "$version" ]]; then
@@ -10,5 +10,5 @@ if command -v rustfmt >/dev/null; then
   fi
 fi
 
-cargo uninstall rustfmt
+cargo uninstall rustfmt || true
 cargo install --vers $version rustfmt

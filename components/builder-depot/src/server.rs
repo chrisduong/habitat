@@ -42,11 +42,12 @@ use router::{Params, Router};
 use rustc_serialize::json::{self, ToJson};
 use unicase::UniCase;
 use urlencoded::UrlEncodedQuery;
-use serde_json;
 
 use super::Depot;
 use config::Config;
 use error::{Error, Result};
+
+include!(concat!(env!("OUT_DIR"), "/serde_types.rs"));
 
 const PAGINATION_RANGE_DEFAULT: isize = 0;
 const PAGINATION_RANGE_MAX: isize = 50;
@@ -59,14 +60,9 @@ pub fn origin_create(req: &mut Request) -> IronResult<Response> {
         request.set_owner_id(session.get_id());
         request.set_owner_name(session.get_name().to_string());
     }
-    match req.get::<bodyparser::Json>() {
-        Ok(Some(body)) => {
-            match body.find("name") {
-                Some(&serde_json::Value::String(ref origin)) => request.set_name(origin.to_owned()),
-                _ => return Ok(Response::with(status::BadRequest)),
-            }
-        }
-        _ => return Ok(Response::with(status::BadRequest)),
+    match req.get::<bodyparser::Struct<OriginCreateReq>>() {
+        Ok(Some(body)) => request.set_name(body.name),
+        _ => return Ok(Response::with(status::UnprocessableEntity)),
     };
 
     if !keys::is_valid_origin_name(request.get_name()) {
@@ -279,20 +275,7 @@ fn write_file(filename: &PathBuf, body: &mut Body) -> Result<bool> {
 
 fn upload_origin_key(req: &mut Request) -> IronResult<Response> {
     let depot = req.get::<persistent::Read<Depot>>().unwrap();
-
-    // this lets us get around ownership/mutability issues
-    fn get_origin_and_revision(req: &mut Request) -> Option<(String, String)> {
-        let params = req.extensions.get::<Router>().unwrap();
-        let origin = params.find("origin").map(|s| s.to_string());
-        let revision = params.find("revision").map(|s| s.to_string());
-        match (origin, revision) {
-            (None, _) => None,
-            (_, None) => None,
-            (Some(origin), Some(revision)) => Some((origin, revision)),
-        }
-    }
-
-    let (origin, revision) = match get_origin_and_revision(req) {
+    let (origin, revision) = match extract_origin_and_revision(req) {
         Some((origin, revision)) => (origin, revision),
         None => return Ok(Response::with(status::BadRequest)),
     };
@@ -411,22 +394,18 @@ fn upload_origin_secret_key(req: &mut Request) -> IronResult<Response> {
 
 fn upload_package(req: &mut Request) -> IronResult<Response> {
     let depot = req.get::<persistent::Read<Depot>>().unwrap();
-    // this lets us get around ownership/mutability issues
-    fn get_ident_and_checksum(req: &mut Request) -> Option<(String, depotsrv::PackageIdent)> {
-        debug!("Upload {:?}", req);
-        let checksum_from_param = match extract_query_value("checksum", req) {
-            Some(checksum) => checksum,
-            None => return None,
-        };
-        let params = req.extensions.get::<Router>().unwrap();
-        let ident = ident_from_params(params);
-        Some((checksum_from_param, ident))
-    }
-
-    let (checksum_from_param, ident) = match get_ident_and_checksum(req) {
-        Some((checksum_from_param, ident)) => (checksum_from_param, ident),
+    let checksum_from_param = match extract_query_value("checksum", req) {
+        Some(checksum) => checksum,
         None => return Ok(Response::with(status::BadRequest)),
     };
+    let ident = {
+        let params = req.extensions.get::<Router>().unwrap();
+        ident_from_params(params)
+    };
+
+    debug!("UPLOADING checksum={}, ident={}",
+           checksum_from_param,
+           ident);
 
     if !depot.config.insecure {
         let session = req.extensions.get::<Authenticated>().unwrap();
@@ -521,13 +500,8 @@ fn download_origin_key(req: &mut Request) -> IronResult<Response> {
 
     let xfilename = origin_keyfile.file_name().unwrap().to_string_lossy().into_owned();
     let mut response = Response::with((status::Ok, origin_keyfile));
-    // use set_raw because we're having problems with Iron's Hyper 0.8.x
-    // and the newer Hyper 0.9.4. TODO: change back to set() once
-    // Iron updates to Hyper 0.9.x.
-    response.headers.set_raw("X-Filename", vec![xfilename.clone().into_bytes()]);
-    response.headers.set_raw("content-disposition",
-                             vec![format!("attachment; filename=\"{}\"", xfilename.clone())
-                                      .into_bytes()]);
+    response.headers.set(ContentDisposition(format!("attachment; filename=\"{}\"", xfilename)));
+    response.headers.set(XFileName(xfilename));
     do_cache_response(&mut response);
     Ok(response)
 }
@@ -559,13 +533,8 @@ fn download_latest_origin_key(req: &mut Request) -> IronResult<Response> {
 
     let xfilename = origin_keyfile.file_name().unwrap().to_string_lossy().into_owned();
     let mut response = Response::with((status::Ok, origin_keyfile));
-    // use set_raw because we're having problems with Iron's Hyper 0.8.x
-    // and the newer Hyper 0.9.4. TODO: change back to set() once
-    // Iron updates to Hyper 0.9.x.
-    response.headers.set_raw("X-Filename", vec![xfilename.clone().into_bytes()]);
-    response.headers.set_raw("content-disposition",
-                             vec![format!("attachment; filename=\"{}\"", xfilename.clone())
-                                      .into_bytes()]);
+    response.headers.set(ContentDisposition(format!("attachment; filename=\"{}\"", xfilename)));
+    response.headers.set(XFileName(xfilename));
     dont_cache_response(&mut response);
     Ok(response)
 }
@@ -581,17 +550,11 @@ fn download_package(req: &mut Request) -> IronResult<Response> {
                 match fs::metadata(&archive.path) {
                     Ok(_) => {
                         let mut response = Response::with((status::Ok, archive.path.clone()));
-                        // use set_raw because we're having problems with Iron's Hyper 0.8.x
-                        // and the newer Hyper 0.9.4. TODO: change back to set() once
-                        // Iron updates to Hyper 0.9.x.
-
                         do_cache_response(&mut response);
                         response.headers
-                            .set_raw("X-Filename", vec![archive.file_name().clone().into_bytes()]);
-                        response.headers.set_raw("content-disposition",
-                                                 vec![format!("attachment; filename=\"{}\"",
-                                                              archive.file_name().clone())
-                                                          .into_bytes()]);
+                            .set(ContentDisposition(format!("attachment; filename=\"{}\"",
+                                                            archive.file_name())));
+                        response.headers.set(XFileName(archive.file_name()));
                         Ok(response)
                     }
                     Err(_) => Ok(Response::with(status::NotFound)),
@@ -655,19 +618,19 @@ fn list_packages(req: &mut Request) -> IronResult<Response> {
             Ok(packages) => {
                 let count = depot.datastore.packages.index.count(&ident).unwrap();
                 let body = json::encode(&packages).unwrap();
-                let next_range = vec![format!("{}", num + 1).into_bytes()];
-                let mut response = if count as isize >= (num + 1) {
+                let next_range = num + 1;
+                let mut response = if count as isize >= next_range {
                     let mut response = Response::with((status::PartialContent, body));
-                    response.headers.set_raw("Next-Range", next_range);
+                    response.headers.set(NextRange(next_range));
                     response
                 } else {
                     Response::with((status::Ok, body))
                 };
-                let range = vec![format!("{}..{}; count={}", offset, num, count).into_bytes()];
-                response.headers.set_raw("Content-Range", range.clone());
+                let range = format!("{}..{}; count={}", offset, num, count);
+                response.headers.set(ContentRange(range.clone()));
                 // We set both of these because Fastly was stripping the
                 // Content-Range, so we use both until we can get that fixed.
-                response.headers.set_raw("X-Content-Range", range);
+                response.headers.set(XContentRange(range));
                 response.headers.set(ContentType(Mime(TopLevel::Application,
                                                       SubLevel::Json,
                                                       vec![(Attr::Charset, Value::Utf8)])));
@@ -688,19 +651,19 @@ fn list_packages(req: &mut Request) -> IronResult<Response> {
             Ok(packages) => {
                 let count = depot.datastore.packages.index.count(&ident).unwrap();
                 let body = json::encode(&packages).unwrap();
-                let next_range = vec![format!("{}", num + 1).into_bytes()];
-                let mut response = if count as isize >= (num + 1) {
+                let next_range = num + 1;
+                let mut response = if count as isize >= next_range {
                     let mut response = Response::with((status::PartialContent, body));
-                    response.headers.set_raw("Next-Range", next_range);
+                    response.headers.set(NextRange(next_range));
                     response
                 } else {
                     Response::with((status::Ok, body))
                 };
-                let range = vec![format!("{}..{}; count={}", offset, num, count).into_bytes()];
-                response.headers.set_raw("Content-Range", range.clone());
+                let range = format!("{}..{}; count={}", offset, num, count);
+                response.headers.set(ContentRange(range.clone()));
                 // We set both of these because Fastly was stripping the
                 // Content-Range, so we use both until we can get that fixed.
-                response.headers.set_raw("X-Content-Range", range);
+                response.headers.set(XContentRange(range));
                 response.headers.set(ContentType(Mime(TopLevel::Application,
                                                       SubLevel::Json,
                                                       vec![(Attr::Charset, Value::Utf8)])));
@@ -817,19 +780,18 @@ fn search_packages(req: &mut Request) -> IronResult<Response> {
     let partial = params.find("query").unwrap();
     let packages = depot.datastore.packages.index.search(partial, offset, num).unwrap();
     let body = json::encode(&packages).unwrap();
-    let next_range = vec![format!("{}", num + 1).into_bytes()];
     let mut response = if packages.len() as isize >= (num - offset) {
         let mut response = Response::with((status::PartialContent, body));
-        response.headers.set_raw("Next-Range", next_range);
+        response.headers.set(NextRange(num + 1));
         response
     } else {
         Response::with((status::Ok, body))
     };
-    let range = vec![format!("{}..{}", offset, num).into_bytes()];
-    response.headers.set_raw("Content-Range", range.clone());
+    let range = format!("{}..{}", offset, num);
+    response.headers.set(ContentRange(range.clone()));
     // We set both of these because Fastly was stripping the
     // Content-Range, so we use both until we can get that fixed.
-    response.headers.set_raw("X-Content-Range", range);
+    response.headers.set(XContentRange(range));
     response.headers.set(ContentType(Mime(TopLevel::Application,
                                           SubLevel::Json,
                                           vec![(Attr::Charset, Value::Utf8)])));
@@ -841,10 +803,7 @@ fn search_packages(req: &mut Request) -> IronResult<Response> {
 fn render_package(pkg: &depotsrv::Package, should_cache: bool) -> IronResult<Response> {
     let body = json::encode(&pkg.to_json()).unwrap();
     let mut response = Response::with((status::Ok, body));
-    // use set_raw because we're having problems with Iron's Hyper 0.8.x
-    // and the newer Hyper 0.9.4.
-    // TODO: change back to set() once Iron updates to Hyper 0.9.x.
-    response.headers.set_raw("ETag", vec![pkg.get_checksum().to_string().into_bytes()]);
+    response.headers.set(ETag(pkg.get_checksum().to_string()));
     response.headers.set(ContentType(Mime(TopLevel::Application,
                                           SubLevel::Json,
                                           vec![(Attr::Charset, Value::Utf8)])));
@@ -945,89 +904,127 @@ fn extract_query_value(key: &str, req: &mut Request) -> Option<String> {
     }
 }
 
+fn extract_origin_and_revision(req: &mut Request) -> Option<(String, String)> {
+    let params = req.extensions.get::<Router>().unwrap();
+    let origin = params.find("origin").map(|s| s.to_string());
+    let revision = params.find("revision").map(|s| s.to_string());
+    match (origin, revision) {
+        (None, _) => None,
+        (_, None) => None,
+        (Some(origin), Some(revision)) => Some((origin, revision)),
+    }
+}
+
 fn do_cache_response(response: &mut Response) {
-    response.headers.set_raw("Cache-Control",
-                             vec![format!("public, max-age={}", ONE_YEAR_IN_SECS).into_bytes()]);
+    response.headers.set(CacheControl(format!("public, max-age={}", ONE_YEAR_IN_SECS)));
 }
 
 fn dont_cache_response(response: &mut Response) {
-    response.headers.set_raw("Cache-Control",
-                             vec![format!("private, no-cache, no-store").into_bytes()]);
+    response.headers.set(CacheControl(format!("private, no-cache, no-store")));
 }
 
 pub fn router(depot: Depot) -> Result<Chain> {
-    let basic = Authenticated::default();
+    let basic = Authenticated::new(&depot.config);
     let router = router!(
-        get "/channels" => list_channels,
-        get "/channels/:channel/pkgs/:origin" => list_packages,
-        get "/channels/:channel/pkgs/:origin/:pkg" => list_packages,
-        get "/channels/:channel/pkgs/:origin/:pkg/latest" => show_package,
-        get "/channels/:channel/pkgs/:origin/:pkg/:version" => list_packages,
-        get "/channels/:channel/pkgs/:origin/:pkg/:version/latest" => show_package,
-        get "/channels/:channel/pkgs/:origin/:pkg/:version/:release" => show_package,
-        post "/channels/:channel/pkgs/:origin/:pkg/:version/:release/promote" => {
-            XHandler::new(promote_package).before(basic)
+        channels: get "/channels" => list_channels,
+        channel_packages: get "/channels/:channel/pkgs/:origin" => list_packages,
+        channel_packages: get "/channels/:channel/pkgs/:origin/:pkg" => list_packages,
+        channel_package_latest: get "/channels/:channel/pkgs/:origin/:pkg/latest" => show_package,
+        channel_packages: get "/channels/:channel/pkgs/:origin/:pkg/:version" => list_packages,
+        channel_package: get "/channels/:channel/pkgs/:origin/:pkg/:version/latest" => show_package,
+        channel_package: get "/channels/:channel/pkgs/:origin/:pkg/:version/:release" => {
+            show_package
         },
-        get "/channels/:channel/pkgs/:origin/:pkg/:version/:release/download" => download_package,
-        get "/channels/:channel/origins/:origin/keys" => list_origin_keys,
-        get "/channels/:channel/origins/:origin/keys/latest" => download_latest_origin_key,
-        get "/channels/:channel/origins/:origin/keys/:revision" => download_origin_key,
+        channel_package_promote:
+            post "/channels/:channel/pkgs/:origin/:pkg/:version/:release/promote" => {
+                XHandler::new(promote_package).before(basic.clone())
+        },
+        channel_package_download:
+            get "/channels/:channel/pkgs/:origin/:pkg/:version/:release/download" => {
+                download_package
+        },
+
+        channel_origin_keys: get "/channels/:channel/origins/:origin/keys" => list_origin_keys,
+        channel_origin_key_latest: get "/channels/:channel/origins/:origin/keys/latest" => {
+            download_latest_origin_key
+        },
+        channel_origin_key: get "/channels/:channel/origins/:origin/keys/:revision" => {
+            download_origin_key
+        },
 
         // JW: `views` is a deprecated term and now an alias for `channels`. These routes should be
         // removed at a later date.
-        get "/views" => list_channels,
-        get "/views/:channel/pkgs/:origin" => list_packages,
-        get "/views/:channel/pkgs/:origin/:pkg" => list_packages,
-        get "/views/:channel/pkgs/:origin/:pkg/latest" => show_package,
-        get "/views/:channel/pkgs/:origin/:pkg/:version" => list_packages,
-        get "/views/:channel/pkgs/:origin/:pkg/:version/latest" => show_package,
-        get "/views/:channel/pkgs/:origin/:pkg/:version/:release" => show_package,
-        post "/views/:channel/pkgs/:origin/:pkg/:version/:release/promote" => {
-            XHandler::new(promote_package).before(basic)
+        views: get "/views" => list_channels,
+        view_packages: get "/views/:channel/pkgs/:origin" => list_packages,
+        view_packages: get "/views/:channel/pkgs/:origin/:pkg" => list_packages,
+        view_package: get "/views/:channel/pkgs/:origin/:pkg/latest" => show_package,
+        view_packages: get "/views/:channel/pkgs/:origin/:pkg/:version" => list_packages,
+        view_package_latest: get "/views/:channel/pkgs/:origin/:pkg/:version/latest" => {
+            show_package
         },
-        get "/views/:view/pkgs/:origin/:pkg/:version/:release/download" => download_package,
-        get "/views/:view/origins/:origin/keys" => list_origin_keys,
-        get "/views/:view/origins/:origin/keys/latest" => download_latest_origin_key,
-        get "/views/:view/origins/:origin/keys/:revision" => download_origin_key,
+        view_package: get "/views/:channel/pkgs/:origin/:pkg/:version/:release" => {
+            show_package
+        },
+        view_package_promote:
+            post "/views/:channel/pkgs/:origin/:pkg/:version/:release/promote" => {
+                XHandler::new(promote_package).before(basic.clone())
+        },
+        view_package_download:
+            get "/views/:view/pkgs/:origin/:pkg/:version/:release/download" => download_package,
+        view_origin_keys: get "/views/:view/origins/:origin/keys" => list_origin_keys,
+        view_origin_key_latest: get "/views/:view/origins/:origin/keys/latest" => {
+            download_latest_origin_key
+        },
+        view_origin_key: get "/views/:view/origins/:origin/keys/:revision" => {
+            download_origin_key
+        },
 
-        get "/pkgs/search/:query" => search_packages,
-        get "/pkgs/:origin" => list_packages,
-        get "/pkgs/:origin/:pkg" => list_packages,
-        get "/pkgs/:origin/:pkg/latest" => show_package,
-        get "/pkgs/:origin/:pkg/:version" => list_packages,
-        get "/pkgs/:origin/:pkg/:version/latest" => show_package,
-        get "/pkgs/:origin/:pkg/:version/:release" => show_package,
+        package_search: get "/pkgs/search/:query" => search_packages,
+        packages: get "/pkgs/:origin" => list_packages,
+        packages: get "/pkgs/:origin/:pkg" => list_packages,
+        package: get "/pkgs/:origin/:pkg/latest" => show_package,
+        packages: get "/pkgs/:origin/:pkg/:version" => list_packages,
+        package: get "/pkgs/:origin/:pkg/:version/latest" => show_package,
+        package: get "/pkgs/:origin/:pkg/:version/:release" => show_package,
 
-        get "/pkgs/:origin/:pkg/:version/:release/download" => download_package,
-        post "/pkgs/:origin/:pkg/:version/:release" => {
+        package_download: get "/pkgs/:origin/:pkg/:version/:release/download" => {
+            download_package
+        },
+        package_upload: post "/pkgs/:origin/:pkg/:version/:release" => {
             if depot.config.insecure {
                 XHandler::new(upload_package)
             } else {
-                XHandler::new(upload_package).before(basic)
+                XHandler::new(upload_package).before(basic.clone())
             }
         },
 
-        post "/origins" => XHandler::new(origin_create).before(basic),
-        get "/origins/:origin" => origin_show,
+        origin_create: post "/origins" => {
+            XHandler::new(origin_create).before(basic.clone())
+        },
+        origin: get "/origins/:origin" => origin_show,
 
-        get "/origins/:origin/keys" => list_origin_keys,
-        get "/origins/:origin/keys/latest" => download_latest_origin_key,
-        get "/origins/:origin/keys/:revision" => download_origin_key,
-        post "/origins/:origin/keys/:revision" => {
+        origin_keys: get "/origins/:origin/keys" => list_origin_keys,
+        origin_key_latest: get "/origins/:origin/keys/latest" => download_latest_origin_key,
+        origin_key: get "/origins/:origin/keys/:revision" => download_origin_key,
+        origin_key_create: post "/origins/:origin/keys/:revision" => {
             if depot.config.insecure {
                 XHandler::new(upload_origin_key)
             } else {
-                XHandler::new(upload_origin_key).before(basic)
+                XHandler::new(upload_origin_key).before(basic.clone())
             }
         },
-        post "/origins/:origin/secret_keys/:revision" => {
-            XHandler::new(upload_origin_secret_key).before(basic)
+        origin_secret_key_create: post "/origins/:origin/secret_keys/:revision" => {
+            XHandler::new(upload_origin_secret_key).before(basic.clone())
         },
-        post "/origins/:origin/users/:username/invitations" => {
-            XHandler::new(invite_to_origin).before(basic)
+        origin_invitation_create: post "/origins/:origin/users/:username/invitations" => {
+            XHandler::new(invite_to_origin).before(basic.clone())
         },
-        get "/origins/:origin/invitations" => XHandler::new(list_origin_invitations).before(basic),
-        get "/origins/:origin/users" => XHandler::new(list_origin_members).before(basic),
+        origin_invitations: get "/origins/:origin/invitations" => {
+            XHandler::new(list_origin_invitations).before(basic.clone())
+        },
+        origin_users: get "/origins/:origin/users" => {
+            XHandler::new(list_origin_members).before(basic.clone())
+        }
     );
     let mut chain = Chain::new(router);
     chain.link(persistent::Read::<Depot>::both(depot));

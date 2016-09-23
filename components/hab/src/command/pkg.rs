@@ -17,26 +17,27 @@
 pub mod binlink {
     use std::fs;
     use std::path::Path;
-    use std::os::unix;
 
-    use ansi_term::Colour::{Blue, Green, Yellow};
+
+    use common::ui::{Status, UI};
     use hcore::package::{PackageIdent, PackageInstall};
+    use hcore::os::filesystem;
 
     use error::{Error, Result};
     use exec::find_command_in_pkg;
 
-    pub fn start(ident: &PackageIdent,
+    pub fn start(ui: &mut UI,
+                 ident: &PackageIdent,
                  binary: &str,
                  dest_path: &Path,
                  fs_root_path: &Path)
                  -> Result<()> {
         let dst_path = fs_root_path.join(try!(dest_path.strip_prefix("/")));
         let dst = dst_path.join(&binary);
-        println!("{}",
-                 Yellow.bold().paint(format!("» Symlinking {} from {} into {}",
-                                             &binary,
-                                             &ident,
-                                             dst_path.display())));
+        try!(ui.begin(format!("Symlinking {} from {} into {}",
+                              &binary,
+                              &ident,
+                              dst_path.display())));
         let pkg_install = try!(PackageInstall::load(&ident, Some(fs_root_path)));
         let src = match try!(find_command_in_pkg(binary, &pkg_install, fs_root_path)) {
             Some(c) => c,
@@ -46,25 +47,23 @@ pub mod binlink {
             }
         };
         if !dst_path.is_dir() {
-            println!("{} parent directory {}",
-                     Green.paint("Ω Creating"),
-                     dst_path.display());
+            try!(ui.status(Status::Creating,
+                           format!("parent directory {}", dst_path.display())));
             try!(fs::create_dir_all(&dst_path))
         }
         match fs::read_link(&dst) {
             Ok(path) => {
                 if path != src {
                     try!(fs::remove_file(&dst));
-                    try!(unix::fs::symlink(&src, &dst));
+                    try!(filesystem::symlink(&src, &dst));
                 }
             }
-            Err(_) => try!(unix::fs::symlink(&src, &dst)),
+            Err(_) => try!(filesystem::symlink(&src, &dst)),
         }
-        println!("{}",
-                 Blue.paint(format!("★ Binary {} from {} symlinked to {}",
-                                    &binary,
-                                    &pkg_install.ident(),
-                                    &dst.display())));
+        try!(ui.end(format!("Binary {} from {} symlinked to {}",
+                            &binary,
+                            &pkg_install.ident(),
+                            &dst.display())));
         Ok(())
     }
 }
@@ -72,10 +71,13 @@ pub mod binlink {
 pub mod build {
     use std::ffi::OsString;
 
+    use common::ui::UI;
+
     use error::Result;
     use command::studio;
 
-    pub fn start(plan_context: &str,
+    pub fn start(ui: &mut UI,
+                 plan_context: &str,
                  root: Option<&str>,
                  src: Option<&str>,
                  keys: Option<&str>,
@@ -99,7 +101,7 @@ pub mod build {
             args.push("-R".into());
         }
         args.push(plan_context.into());
-        studio::start(args)
+        studio::start(ui, args)
     }
 }
 
@@ -133,8 +135,10 @@ pub mod exec {
 }
 
 pub mod export {
-    use error::Result;
+    use common::ui::UI;
     use hcore::package::PackageIdent;
+
+    use error::Result;
 
     #[allow(dead_code)]
     pub struct ExportFormat {
@@ -153,30 +157,33 @@ pub mod export {
         }
     }
 
-    pub fn start(ident: &PackageIdent, format: &ExportFormat) -> Result<()> {
-        inner::start(ident, format)
+    pub fn start(ui: &mut UI, ident: &PackageIdent, format: &ExportFormat) -> Result<()> {
+        inner::start(ui, ident, format)
     }
 
-    pub fn format_for(value: &str) -> Result<ExportFormat> {
-        inner::format_for(value)
+    pub fn format_for(ui: &mut UI, value: &str) -> Result<ExportFormat> {
+        inner::format_for(ui, value)
     }
 
     #[cfg(target_os = "linux")]
     mod inner {
-        use command::pkg::exec;
+        use std::ffi::OsString;
+        use std::path::Path;
+        use std::str::FromStr;
+
         use common::command::package::install;
-        use error::{Error, Result};
+        use common::ui::{Status, UI};
         use hcore::crypto::default_cache_key_path;
         use hcore::fs::{cache_artifact_path, FS_ROOT_PATH};
         use hcore::package::{PackageIdent, PackageInstall};
         use hcore::url::default_depot_url;
-        use std::ffi::OsString;
-        use std::path::Path;
-        use std::str::FromStr;
-        use super::ExportFormat;
-        use {PRODUCT, VERSION};
 
-        pub fn format_for(value: &str) -> Result<ExportFormat> {
+        use {PRODUCT, VERSION};
+        use command::pkg::exec;
+        use error::{Error, Result};
+        use super::ExportFormat;
+
+        pub fn format_for(_ui: &mut UI, value: &str) -> Result<ExportFormat> {
             match value {
                 "docker" => {
                     let format = ExportFormat {
@@ -210,16 +217,14 @@ pub mod export {
             }
         }
 
-        pub fn start(ident: &PackageIdent, format: &ExportFormat) -> Result<()> {
+        pub fn start(ui: &mut UI, ident: &PackageIdent, format: &ExportFormat) -> Result<()> {
             let format_ident = format.pkg_ident();
             match PackageInstall::load(format.pkg_ident(), None) {
                 Ok(_) => {}
                 _ => {
-                    println!("{} is not installed", &format_ident.to_string());
-                    println!("Searching for {} in remote {}",
-                             &format_ident.to_string(),
-                             &default_depot_url());
-                    try!(install::start(&default_depot_url(),
+                    try!(ui.status(Status::Missing, format!("package for {}", &format_ident)));
+                    try!(install::start(ui,
+                                        &default_depot_url(),
                                         &format_ident.to_string(),
                                         PRODUCT,
                                         VERSION,
@@ -235,29 +240,28 @@ pub mod export {
 
     #[cfg(not(target_os = "linux"))]
     mod inner {
-        use ansi_term::Colour::Yellow;
         use error::{Error, Result};
+        use common::ui::UI;
         use hcore::package::PackageIdent;
         use std::env;
         use super::ExportFormat;
 
-        pub fn format_for(value: &str) -> Result<ExportFormat> {
-            let msg = format!("∅ Exporting {} packages from this operating system is not yet \
+        pub fn format_for(ui: &mut UI, value: &str) -> Result<ExportFormat> {
+            try!(ui.warn(format!("∅ Exporting {} packages from this operating system is not yet \
                                supported. Try running this command again on a 64-bit Linux \
                                operating system.\n",
-                              value);
-            println!("{}", Yellow.bold().paint(msg));
+                              value)));
+            try!(ui.br());
             let e = Error::UnsupportedExportFormat(value.to_string());
             Err(e)
         }
 
-        pub fn start(_ident: &PackageIdent, _format: &ExportFormat) -> Result<()> {
+        pub fn start(ui: &mut UI, _ident: &PackageIdent, _format: &ExportFormat) -> Result<()> {
             let subcmd = env::args().nth(1).unwrap_or("<unknown>".to_string());
             let subsubcmd = env::args().nth(2).unwrap_or("<unknown>".to_string());
-            let msg = format!("∅ Exporting packages from this operating system is not yet \
-                               supported. Try running this command again on a 64-bit Linux \
-                               operating system.\n");
-            println!("{}", Yellow.bold().paint(msg));
+            try!(ui.warn("Exporting packages from this operating system is not yet supported. Try \
+                       running this command again on a 64-bit Linux operating system."));
+            try!(ui.br());
             Err(Error::SubcommandNotSupported(format!("{} {}", subcmd, subsubcmd)))
 
         }
@@ -372,18 +376,24 @@ pub mod search {
         match depot_client.search_package(st.to_string()) {
             Ok(packages) => {
                 match packages.len() {
-                    0 => { println!("No packages found that match '{}'", st); }
+                    0 => {
+                        println!("No packages found that match '{}'", st);
+                    }
                     _ => {
                         for p in &packages {
-                            println!("{}/{}/{}/{}", p.origin, p.name, p.version.clone().unwrap(), p.release.clone().unwrap());
+                            println!("{}/{}/{}/{}",
+                                     p.origin,
+                                     p.name,
+                                     p.version.clone().unwrap(),
+                                     p.release.clone().unwrap());
                         }
                         if packages.len() == 50 {
                             println!("Search returned too many items, only showing the first 50");
                         }
                     }
                 }
-            },
-            Err(e) => println!("{}", e)
+            }
+            Err(e) => println!("{}", e),
         }
         Ok(())
     }
@@ -392,22 +402,20 @@ pub mod search {
 pub mod sign {
     use std::path::Path;
 
-    use ansi_term::Colour::{Blue, Green, Yellow};
+    use common::ui::{Status, UI};
     use hcore::crypto::{artifact, SigKeyPair};
 
     use error::Result;
 
-    pub fn start(origin: &SigKeyPair, src: &Path, dst: &Path) -> Result<()> {
-        println!("{}",
-                 Yellow.bold().paint(format!("» Signing {}", src.display())));
-        println!("{} {} with {} to create {}",
-                 Green.paint("☛ Signing"),
-                 src.display(),
-                 &origin.name_with_rev(),
-                 dst.display());
+    pub fn start(ui: &mut UI, origin: &SigKeyPair, src: &Path, dst: &Path) -> Result<()> {
+        try!(ui.begin(format!("Signing {}", src.display())));
+        try!(ui.status(Status::Signing,
+                       format!("{} with {} to create {}",
+                               src.display(),
+                               &origin.name_with_rev(),
+                               dst.display())));
         try!(artifact::sign(src, dst, origin));
-        println!("{}",
-                 Blue.paint(format!("★ Signed artifact {}.", dst.display())));
+        try!(ui.end(format!("Signed artifact {}.", dst.display())));
         Ok(())
     }
 }
@@ -432,12 +440,11 @@ pub mod upload {
 
     use std::path::{Path, PathBuf};
 
-    use ansi_term::Colour::{Blue, Green, Red, Yellow};
-    use common::command::ProgressBar;
+    use common::ui::{Status, UI};
+    use depot_client::{self, Client};
     use hcore::crypto::artifact::get_artifact_header;
     use hcore::crypto::keys::parse_name_with_rev;
     use hcore::package::{PackageArchive, PackageIdent};
-    use depot_client::{self, Client};
     use hyper::status::StatusCode::{self, Forbidden, Unauthorized};
 
     use {PRODUCT, VERSION};
@@ -451,7 +458,8 @@ pub mod upload {
     /// * Fails if it cannot find a package
     /// * Fails if the package doesn't have a `.hart` file in the cache
     /// * Fails if it cannot upload the file
-    pub fn start<P: AsRef<Path>>(url: &str,
+    pub fn start<P: AsRef<Path>>(ui: &mut UI,
+                                 url: &str,
                                  token: &str,
                                  archive_path: &P,
                                  key_path: &P)
@@ -464,20 +472,17 @@ pub mod upload {
         let public_keyfile_name = format!("{}.pub", &hart_header.key_name);
         let public_keyfile = key_buf.join(&public_keyfile_name);
 
-        println!("{}",
-                 Green.paint(format!("☛ Artifact signed with {}", &public_keyfile_name)));
+        try!(ui.status(Status::Signed,
+                       format!("artifact with {}", &public_keyfile_name)));
 
         let (name, rev) = try!(parse_name_with_rev(&hart_header.key_name));
         let depot_client = try!(Client::new(url, PRODUCT, VERSION, None));
 
-        println!("{}",
-                 Yellow.bold().paint(format!("» Uploading origin key {}", &public_keyfile_name)));
-
-        match depot_client.put_origin_key(&name, &rev, &public_keyfile, token, None) {
+        try!(ui.begin(format!("Uploading public origin key {}", &public_keyfile_name)));
+        match depot_client.put_origin_key(&name, &rev, &public_keyfile, token, ui.progress()) {
             Ok(()) => {
-                println!("{} {}",
-                         Green.bold().paint("✓ Uploaded origin key"),
-                         &public_keyfile_name);
+                try!(ui.status(Status::Uploaded,
+                               format!("public origin key {}", &public_keyfile_name)));
             }
             Err(e @ depot_client::Error::HTTP(Forbidden)) |
             Err(e @ depot_client::Error::HTTP(Unauthorized)) => {
@@ -486,56 +491,48 @@ pub mod upload {
 
             Err(e @ depot_client::Error::HTTP(_)) => {
                 debug!("Error uploading public key {}", e);
-                println!("{} {}",
-                         Green.bold()
-                             .paint("→ Public key revision already exists in the depot"),
-                         &public_keyfile_name);
+                try!(ui.status(Status::Using,
+                               format!("existing public origin key {}", &public_keyfile_name)));
             }
             Err(e) => {
                 return Err(Error::DepotClient(e));
             }
         };
 
-        println!("{}",
-                 Yellow.bold().paint(format!("» Uploading {}", archive_path.as_ref().display())));
-
+        try!(ui.begin(format!("Uploading {}", archive_path.as_ref().display())));
         let tdeps = try!(archive.tdeps());
         for dep in tdeps.into_iter() {
             match depot_client.show_package(dep.clone()) {
-                Ok(_) => println!("{} {}", Green.paint("→ Exists"), &dep),
+                Ok(_) => try!(ui.status(Status::Using, format!("existing {}", &dep))),
                 Err(depot_client::Error::RemotePackageNotFound(_)) => {
                     let candidate_path = match archive_path.as_ref().parent() {
                         Some(p) => PathBuf::from(p),
                         None => unreachable!(),
                     };
-                    try!(attempt_upload_dep(&depot_client, token, &dep, &candidate_path));
+                    try!(attempt_upload_dep(ui, &depot_client, token, &dep, &candidate_path));
                 }
                 Err(e) => return Err(Error::from(e)),
             }
         }
         let ident = try!(archive.ident());
         match depot_client.show_package(ident.clone()) {
-            Ok(_) => println!("{} {}", Green.paint("→ Exists"), &ident),
+            Ok(_) => try!(ui.status(Status::Using, format!("existing {}", &ident))),
             Err(_) => {
-                try!(upload_into_depot(&depot_client, token, &ident, &mut archive));
+                try!(upload_into_depot(ui, &depot_client, token, &ident, &mut archive));
             }
         }
-        println!("{}",
-                 Blue.paint(format!("★ Upload of {} complete.", &ident)));
-
+        try!(ui.end(format!("Upload of {} complete.", &ident)));
         Ok(())
     }
 
-    fn upload_into_depot(depot_client: &Client,
+    fn upload_into_depot(ui: &mut UI,
+                         depot_client: &Client,
                          token: &str,
                          ident: &PackageIdent,
                          mut archive: &mut PackageArchive)
                          -> Result<()> {
-        println!("{} {}",
-                 Green.bold().paint("↑ Uploading"),
-                 archive.path.display());
-        let mut progress = ProgressBar::default();
-        match depot_client.put_package(&mut archive, token, Some(&mut progress)) {
+        try!(ui.status(Status::Uploading, archive.path.display()));
+        match depot_client.put_package(&mut archive, token, ui.progress()) {
             Ok(()) => (),
             Err(depot_client::Error::HTTP(StatusCode::Conflict)) => {
                 println!("Package already exists on remote; skipping.");
@@ -552,11 +549,12 @@ pub mod upload {
                 return Err(Error::from(e));
             }
         };
-        println!("{} {}", Green.bold().paint("✓ Uploaded"), ident);
+        try!(ui.status(Status::Uploaded, ident));
         Ok(())
     }
 
-    fn attempt_upload_dep(depot_client: &Client,
+    fn attempt_upload_dep(ui: &mut UI,
+                          depot_client: &Client,
                           token: &str,
                           ident: &PackageIdent,
                           archives_dir: &PathBuf)
@@ -565,7 +563,7 @@ pub mod upload {
 
         if candidate_path.is_file() {
             let mut archive = PackageArchive::new(candidate_path);
-            match upload_into_depot(&depot_client, token, &ident, &mut archive) {
+            match upload_into_depot(ui, &depot_client, token, &ident, &mut archive) {
                 Ok(()) => Ok(()),
                 Err(Error::DepotClient(depot_client::Error::HTTP(e))) => {
                     return Err(Error::DepotClient(depot_client::Error::HTTP(e)))
@@ -579,10 +577,10 @@ pub mod upload {
                 }
             }
         } else {
-            println!("{} artifact for {} was not found in {}",
-                     Red.bold().paint("✗ Missing"),
-                     ident.archive_name().unwrap(),
-                     archives_dir.display());
+            try!(ui.status(Status::Missing,
+                           format!("artifact for {} was not found in {}",
+                                   ident.archive_name().unwrap(),
+                                   archives_dir.display())));
             return Err(Error::FileNotFound(archives_dir.to_string_lossy()
                 .into_owned()));
         }
@@ -592,21 +590,17 @@ pub mod upload {
 pub mod verify {
     use std::path::Path;
 
-    use ansi_term::Colour::{Blue, Green, Yellow};
+    use common::ui::{Status, UI};
     use hcore::crypto::artifact;
 
     use error::Result;
 
-    pub fn start(src: &Path, cache: &Path) -> Result<()> {
-        println!("{}",
-                 Yellow.bold().paint(format!("» Verifying artifact {}", &src.display())));
+    pub fn start(ui: &mut UI, src: &Path, cache: &Path) -> Result<()> {
+        try!(ui.begin(format!("Verifying artifact {}", &src.display())));
         let (name_with_rev, hash) = try!(artifact::verify(src, cache));
-        println!("{} checksum {} signed with {}",
-                 Green.bold().paint("✓ Verifed"),
-                 &hash,
-                 &name_with_rev);
-        println!("{}",
-                 Blue.paint(format!("★ Verified artifact {}.", &src.display())));
+        try!(ui.status(Status::Verified,
+                       format!("checksum {} signed with {}", &hash, &name_with_rev)));
+        try!(ui.end(format!("Verified artifact {}.", &src.display())));
         Ok(())
     }
 }

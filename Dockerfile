@@ -4,6 +4,7 @@ MAINTAINER The Habitat Maintainers <humans@habitat.sh>
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     ca-certificates \
+    cmake \
     curl \
     file \
     gdb \
@@ -20,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     protobuf-compiler \
     redis-server \
+    software-properties-common \
     sudo \
     tmux \
     vim \
@@ -31,14 +33,9 @@ ENV PATH $PATH:$CARGO_HOME/bin:/root/.cargo/bin
 ARG HAB_DEPOT_URL
 ENV HAB_DEPOT_URL ${HAB_DEPOT_URL:-}
 
-RUN curl -s https://static.rust-lang.org/rustup.sh | sh -s -- -y \
-  && RUST_VERSION=$(rustc -V | cut -d ' ' -f 2) \
-  && URL=http://static.rust-lang.org/dist/rust-std-${RUST_VERSION}-x86_64-unknown-linux-musl.tar.gz \
-  && mkdir -p /prep/rust-std-musl \
-  && (cd /prep && curl -LO $URL) \
-  && tar xf /prep/$(basename $URL) -C /prep/rust-std-musl --strip-components=1 \
-  && (cd /prep/rust-std-musl && ./install.sh --prefix=$(rustc --print sysroot)) \
-  && rm -rf /prep \
+RUN curl -sSf https://sh.rustup.rs \
+    | env -u CARGO_HOME sh -s -- -y --no-modify-path --default-toolchain stable \
+  && env -u CARGO_HOME rustup target add x86_64-unknown-linux-musl \
   && rustc -V
 RUN URL=https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-unknown-linux-gnu.tar.gz \
   && mkdir -p /prep/cargo \

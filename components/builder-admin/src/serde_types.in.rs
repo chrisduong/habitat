@@ -45,3 +45,10 @@ impl FeatureFlag {
         }
     }
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct SearchTerm {
+    pub attr: String,
+    pub entity: String,
+    pub value: String,
+}

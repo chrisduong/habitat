@@ -95,19 +95,19 @@ To install Middleman, follow these instructions:
 
 1. Change to the `www` directory and type:
 
-       bundle install --path=vendor
+       `bundle install --path=vendor`
 
 2. To build the documentation, either before or after you make your change, change to the `www` directory and type:
 
-       bundle exec middleman build
+       `bundle exec middleman build`
 
 3. The documentation is built into the `source` directory. You can instruct Middleman to serve the site by typing:
 
-       bundle exec middleman serve
+       `bundle exec middleman serve`
 
 4. Middleman will start a small webserver on your computer and indicate what URL you should load in your browser to preview it.
 
-       == View your site at "http://mylaptop.example.com:4567", "http://192.168.1.101:4567"
+       `== View your site at "http://mylaptop.example.com:4567", "http://192.168.1.101:4567"`
 
 5. You can continue to make changes to the documentation files and Middleman will reload them live.
 6. Press `Ctrl-C` to terminate the webserver when you are finished working with Middleman.
@@ -130,12 +130,13 @@ on port `9633`. You can then read the docs at `http://<DOCKER_HOST>:9633/`
 1. Sign and commit your change
 1. Push your feature branch to GitHub, and create a Pull Request
 
-## Running the Builder API locally
+## Running a Builder service cluster locally
 
-Run `make api-shell`. A shell will start with the API services running. The API
-will be available on port 9636 of your Docker host.
+A service cluster can be started in your host machine with `make bldr-run` or within a docker
+container with `make bldr-run-shell`. The public API will be available on port 9636 and the admin
+API will be available on port 8080.
 
-Inside the shell, run the `api` command to manage the API server processes.
+> Note: some manual setup is required to run a Builder cluster on your host machine. This process will be automated in the future, but for now your mileage may vary.
 
 ### Signing Your Commits
 

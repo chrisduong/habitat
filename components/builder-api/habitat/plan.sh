@@ -1,17 +1,17 @@
 pkg_name=hab-builder-api
 pkg_origin=core
-pkg_version=$(cat "$PLAN_CONTEXT/../../../VERSION")
+pkg_version=$(cat "$PLAN_CONTEXT/../../../VERSION-BLDR")
 pkg_maintainer="Jamie Winsor <reset@chef.io>"
 pkg_license=('Apache-2.0')
 pkg_source=nosuchfile.tar.gz
 pkg_bin_dirs=(bin)
-pkg_deps=(core/glibc core/openssl core/coreutils core/gcc-libs core/zeromq core/libsodium core/libarchive)
-pkg_build_deps=(core/protobuf core/protobuf-rust core/coreutils core/cacerts core/cargo-nightly core/rust core/gcc core/pkg-config core/node core/phantomjs)
+pkg_deps=(core/glibc core/openssl core/coreutils core/gcc-libs core/zeromq core/libsodium
+  core/libarchive)
+pkg_build_deps=(core/protobuf core/protobuf-rust core/coreutils core/cacerts core/cargo-nightly
+  core/rust core/gcc core/pkg-config core/node core/phantomjs)
 pkg_expose=(9636)
 bin="bldr-api"
-pkg_svc_run="bin/$bin start -c ${pkg_svc_path}/config.toml"
-pkg_svc_user="root"
-pkg_svc_group="root"
+pkg_svc_run="$bin start -c ${pkg_svc_path}/config.toml"
 
 do_prepare() {
   rm -Rdf $HAB_CACHE_SRC_PATH/ui-$pkg_name-$pkg_version

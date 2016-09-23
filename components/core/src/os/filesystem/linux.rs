@@ -14,6 +14,8 @@
 
 use libc::{self, c_int, c_char, mode_t};
 
+pub use std::os::unix::fs::symlink;
+
 pub fn chown(r_path: *const c_char, uid: u32, gid: u32) -> c_int {
     unsafe { libc::chown(r_path, uid, gid) }
 }

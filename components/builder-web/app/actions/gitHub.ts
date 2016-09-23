@@ -13,11 +13,12 @@
 // limitations under the License.
 
 import "whatwg-fetch";
-import {URLSearchParams} from "angular2/http";
+import {URLSearchParams} from "@angular/http";
 import * as cookies from "js-cookie";
 import config from "../config";
 import {attemptSignIn, addNotification, goHome, fetchMyOrigins, requestRoute, setSigningInFlag,
     signOut} from "./index";
+import {setFeatureFlags} from "./users";
 import {DANGER, WARNING} from "./notifications";
 
 const parseLinkHeader = require("parse-link-header");
@@ -193,6 +194,9 @@ export function requestGitHubAuthToken(params, stateKey = "") {
                 if (data["token"]) {
                     dispatch(authenticateWithGitHub(data["token"]));
                     dispatch(setGitHubAuthToken(data["token"]));
+                    if (data["flags"]) {
+                        dispatch(setFeatureFlags(data["flags"]));
+                    }
                 } else {
                     dispatch(addNotification({
                         title: "Authentication Failed",
