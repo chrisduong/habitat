@@ -25,13 +25,13 @@ enum ErrCode {
   REMOTE_REJECTED = 2;
   BAD_REMOTE_REPLY = 3;
   ENTITY_NOT_FOUND = 4;
-  INTERNAL = 5;
   NO_SHARD = 6;
   ACCESS_DENIED = 7;
   SESSION_EXPIRED = 8;
   ENTITY_CONFLICT = 9;
   ZMQ = 10;
   DATA_STORE = 11;
+  AUTH_SCOPE = 12;
 }
 
 message NetError {

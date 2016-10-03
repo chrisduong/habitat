@@ -30,11 +30,7 @@ curl -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable \
   && rustup target add x86_64-unknown-linux-musl \
   && rustc -V
-wget -nv https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-unknown-linux-gnu.tar.gz && \
-  tar -xzf cargo-nightly-x86_64-unknown-linux-gnu.tar.gz && \
-  sudo cargo-nightly-x86_64-unknown-linux-gnu/install.sh &&
-  rm -rf cargo-nightly-x86_64-unknown-linux-gnu \
-    cargo-nightly-x86_64-unknown-linux-gnu.tar.gz
+source $HOME/.cargo/env
 (adduser --system hab || true) && (addgroup --system hab || true)
 ln -snf /usr/bin/nodejs /usr/bin/node && npm install -g docco && echo "docco `docco -V`"
 
@@ -92,11 +88,7 @@ curl -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable \
   && rustup target add x86_64-unknown-linux-musl \
   && rustc -V
-wget -nv https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-unknown-linux-gnu.tar.gz && \
-  tar -xzf cargo-nightly-x86_64-unknown-linux-gnu.tar.gz && \
-  sudo cargo-nightly-x86_64-unknown-linux-gnu/install.sh &&
-  rm -rf cargo-nightly-x86_64-unknown-linux-gnu \
-    cargo-nightly-x86_64-unknown-linux-gnu.tar.gz
+source $HOME/.cargo/env
 (adduser --system hab || true) && (addgroup --system hab || true)
 ln -snf /usr/bin/nodejs /usr/bin/node && npm install -g docco && echo "docco `docco -V`"
 
@@ -117,7 +109,7 @@ curl http://download.opensuse.org/repositories/home:/fengshuo:/zeromq/CentOS_Cen
 # Install common development tools
 yum groupinstall -y 'Development Tools'
 # install sudo as the Rust installation needs it
-yum install -y sudo libarchive-devel protobuf-devel openssl-devel zeromq-devel libczmq1-devel gpm-libs which
+yum install -y sudo libarchive-devel protobuf-devel openssl-devel zeromq-devel libczmq1-devel gpm-libs which wget
 
 # pkg-config will be able to find libsodium with the following:
 export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
@@ -133,11 +125,7 @@ curl -sSf https://sh.rustup.rs \
     | sh -s -- -y --default-toolchain stable \
   && rustup target add x86_64-unknown-linux-musl \
   && rustc -V
-wget -nv https://static.rust-lang.org/cargo-dist/cargo-nightly-x86_64-unknown-linux-gnu.tar.gz && \
-  tar -xzf cargo-nightly-x86_64-unknown-linux-gnu.tar.gz && \
-  sudo cargo-nightly-x86_64-unknown-linux-gnu/install.sh &&
-  rm -rf cargo-nightly-x86_64-unknown-linux-gnu \
-    cargo-nightly-x86_64-unknown-linux-gnu.tar.gz
+source $HOME/.cargo/env
 
 # Setup hab user and group
 useradd --system hab

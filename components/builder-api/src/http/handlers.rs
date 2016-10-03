@@ -15,6 +15,7 @@
 //! A collection of handlers for the HTTP server's router
 
 use bodyparser;
+use depot::server::check_origin_access;
 use hab_core::package::Plan;
 use hab_net;
 use hab_net::http::controller::*;
@@ -41,18 +42,9 @@ pub fn github_authenticate(req: &mut Request) -> IronResult<Response> {
             let session = try!(session_create(&github, &token));
             Ok(render_json(status::Ok, &session))
         }
-        Err(hab_net::Error::Auth(e)) => {
-            debug!("github authentication, err={:?}", e);
-            let err = net::err(ErrCode::REMOTE_REJECTED, e.error);
-            Ok(render_net_error(&err))
-        }
-        Err(e @ hab_net::Error::JsonDecode(_)) => {
-            debug!("github authentication, err={:?}", e);
-            let err = net::err(ErrCode::BAD_REMOTE_REPLY, "rg:auth:1");
-            Ok(render_net_error(&err))
-        }
+        Err(hab_net::Error::Net(err)) => Ok(render_net_error(&err)),
         Err(e) => {
-            error!("github authentication, err={:?}", e);
+            error!("unhandled github authentication, err={:?}", e);
             let err = net::err(ErrCode::BUG, "rg:auth:0");
             Ok(render_net_error(&err))
         }
@@ -243,15 +235,17 @@ pub fn project_create(req: &mut Request) -> IronResult<Response> {
 pub fn project_delete(req: &mut Request) -> IronResult<Response> {
     let mut project_del = ProjectDelete::new();
     let params = req.extensions.get::<Router>().unwrap();
+    let session = req.extensions.get::<Authenticated>().unwrap();
+    let mut conn = Broker::connect().unwrap();
     {
         let origin = params.find("origin").unwrap();
-        // JW TODO: check to see if we are a member of the origin before deleting.
+        if !try!(check_origin_access(&mut conn, session.get_id(), origin)) {
+            return Ok(Response::with(status::Forbidden));
+        }
         let name = params.find("name").unwrap();
         project_del.set_id(format!("{}/{}", origin, name));
     }
-    let session = req.extensions.get::<Authenticated>().unwrap();
     project_del.set_requestor_id(session.get_id());
-    let mut conn = Broker::connect().unwrap();
     match conn.route::<ProjectDelete, NetOk>(&project_del) {
         Ok(_) => Ok(Response::with(status::NoContent)),
         Err(err) => Ok(render_net_error(&err)),
@@ -304,8 +298,9 @@ pub fn project_update(req: &mut Request) -> IronResult<Response> {
                         Ok(plan) => {
                             let params = req.extensions.get::<Router>().unwrap();
                             let origin = params.find("origin").unwrap();
-                            // JW TODO: check to see if we are a member of the origin before
-                            // allowing any changes to be made.
+                            if !try!(check_origin_access(&mut conn, session.get_id(), origin)) {
+                                return Ok(Response::with(status::Forbidden));
+                            }
                             let name = params.find("name").unwrap();
                             if plan.name != params.find("name").unwrap() {
                                 return Ok(Response::with((status::UnprocessableEntity, "rg:pu:2")));
