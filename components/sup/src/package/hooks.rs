@@ -13,9 +13,8 @@
 // limitations under the License.
 
 use std::fmt;
-use std::fs::{self, OpenOptions};
+use std::fs::{self, File};
 use std::io::prelude::*;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
@@ -23,6 +22,7 @@ use handlebars::Handlebars;
 
 use error::{Error, Result};
 use hcore::util;
+use hcore::os::users;
 use package::Package;
 use service_config::{ServiceConfig, never_escape_fn};
 use util::convert;
@@ -127,8 +127,8 @@ impl Hook {
     #[cfg(any(target_os="linux", target_os="macos"))]
     fn run_platform(&self, cmd: &mut Command) -> Result<()> {
         use std::os::unix::process::CommandExt;
-        let uid = hab_users::user_name_to_uid(&self.user);
-        let gid = hab_users::group_name_to_gid(&self.group);
+        let uid = users::get_uid_by_name(&self.user);
+        let gid = users::get_gid_by_name(&self.group);
         if let None = uid {
             panic!("Can't determine uid");
         }
@@ -163,14 +163,8 @@ impl Hook {
             let toml = try!(ctx.to_toml());
             let svc_data = convert::toml_to_json(toml);
             let data = try!(handlebars.render("hook", &svc_data));
-            let mut file = try!(OpenOptions::new()
-                .write(true)
-                .truncate(true)
-                .create(true)
-                .read(true)
-                .mode(0o770)
-                .open(&self.path));
-            try!(write!(&mut file, "{}", data));
+            let mut file = try!(File::create(&self.path));
+            try!(file.write_all(data.as_bytes()));
             try!(util::perm::set_owner(&self.path, &self.user, &self.group));
             try!(util::perm::set_permissions(&self.path, HOOK_PERMISSIONS));
             Ok(())

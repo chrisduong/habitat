@@ -19,6 +19,7 @@ use std::str::FromStr;
 
 use regex::Regex;
 
+use package::PackageTarget;
 use error::{Error, Result};
 
 pub trait Identifiable: fmt::Display + Into<PackageIdent> {
@@ -29,6 +30,11 @@ pub trait Identifiable: fmt::Display + Into<PackageIdent> {
 
     fn fully_qualified(&self) -> bool {
         self.version().is_some() && self.release().is_some()
+    }
+
+    fn valid(&self) -> bool {
+        let re = Regex::new(r"^[A-Za-z0-9_-]+$").unwrap();
+        re.is_match(self.name())
     }
 
     fn satisfies<I: Identifiable>(&self, other: &I) -> bool {
@@ -80,11 +86,14 @@ impl PackageIdent {
 
     pub fn archive_name(&self) -> Option<String> {
         if self.fully_qualified() {
-            Some(format!("{}-{}-{}-{}-x86_64-linux.hart",
+            let default_target = PackageTarget::default();
+            Some(format!("{}-{}-{}-{}-{}-{}.hart",
                          self.origin,
                          self.name,
                          self.version.as_ref().unwrap(),
-                         self.release.as_ref().unwrap()))
+                         self.release.as_ref().unwrap(),
+                         default_target.architecture,
+                         default_target.platform))
         } else {
             None
         }
@@ -471,5 +480,20 @@ mod tests {
         let full = PackageIdent::new("acme", "rocket", Some("1.2.3"), Some("1234"));
         assert!(!partial.fully_qualified());
         assert!(full.fully_qualified());
+    }
+
+    #[test]
+    fn check_valid_package_id() {
+        let valid1 = PackageIdent::new("acme", "rocket", Some("1.2.3"), Some("1234"));
+        let valid2 = PackageIdent::new("acme", "rocket-one", Some("1.2.3"), Some("1234"));
+        let valid3 = PackageIdent::new("acme", "rocket_one", Some("1.2.3"), Some("1234"));
+        let invalid1 = PackageIdent::new("acme", "rocket.one", Some("1.2.3"), Some("1234"));
+        let invalid2 = PackageIdent::new("acme", "rocket%one", Some("1.2.3"), Some("1234"));
+
+        assert!(valid1.valid());
+        assert!(valid2.valid());
+        assert!(valid3.valid());
+        assert!(!invalid1.valid());
+        assert!(!invalid2.valid());
     }
 }

@@ -101,39 +101,176 @@ from the master branch on a bi-weekly schedule occurring every other Thursday.
     ```
     $ make tag-release
     $ git push origin --tags
-    ```
-
-## Build Release
-
-1. Fetch the tags from the upstream Habitat repository and checkout the release tag
-
-    ```
-    $ cd ~/code/habitat
-    $ git fetch origin --tags
     $ git checkout <version>
     ```
 
-1. Change to your code directory and enter a studio
+## Build Linux Components
+
+Before we begin a build of a plan we first need to determine which other plans from the Habitat
+and core-plans repository depend on it and re-build each of those packages after we build our
+target component.
+
+> note: Dependency re-build will later be handled automatically by the Builder service
+
+### Build `hab`
+
+1. From outside of a studio, change into your code directory and run the build-dependent-order tool with the component's package identifier as the first argument. This will output a list of dependent packages. In the following example we will assume we are rebuilding `core/hab`
+
+    ```
+    $ cd ~/code
+    $ rm build.manifest
+    $ find core-plans habitat -name plan.sh | ./core-plans/bin/build-dependent-order.rb core/hab > build.manifest
+    ```
+
+1. From within a studio, run the build command *first* for the package we specified to build-dependent-order (in this case `core/hab`)
+
+    ```
+    $ hab studio enter
+    > build habitat/components/hab
+    ```
+
+1. Now run the build command for each package path output by build-dependent-order
+
+    ```
+    $ cat build.manifest | while read entry; do echo "Building $(echo $entry | cut -d ' ' -f 1)"; build $(echo $entry | cut -d ' ' -f 2) || break; done
+    ```
+
+Next we will be running the same commands for hab-sup, hab-sup-static and hab-director.
+
+### Build `hab-sub`
+
+1. From outside of a studio:
+
+    ```
+    $ cd ~/code
+    $ rm build.manifest
+    $ find core-plans habitat -name plan.sh | ./core-plans/bin/build-dependent-order.rb core/hab-sup > build.manifest
+    ```
+
+1. From within a studio:
+
+    ```
+    $ hab studio enter
+    > build habitat/components/sup
+    > cat build.manifest | while read entry; do echo "Building $(echo $entry | cut -d ' ' -f 1)"; build $(echo $entry | cut -d ' ' -f 2) || break; done
+    ```
+
+### Build `hab-sub-static`
+
+1. From outside of a studio:
+
+    ```
+    $ cd ~/code
+    $ rm build.manifest
+    $ find core-plans habitat -name plan.sh | ./core-plans/bin/build-dependent-order.rb core/hab-sup-static > build.manifest
+    ```
+
+1. From within a studio:
+
+    ```
+    $ hab studio enter
+    > build habitat/components/sup/static
+    > cat build.manifest | while read entry; do echo "Building $(echo $entry | cut -d ' ' -f 1)"; build $(echo $entry | cut -d ' ' -f 2) || break; done
+    ```
+
+### Build `hab-director`
+
+1. From outside of a studio:
+
+    ```
+    $ cd ~/code
+    $ rm build.manifest
+    $ find core-plans habitat -name plan.sh | ./core-plans/bin/build-dependent-order.rb core/hab-director > build.manifest
+    ```
+
+1. From within a studio:
+
+    ```
+    $ hab studio enter
+    > build habitat/components/director
+    > cat build.manifest | while read entry; do echo "Building $(echo $entry | cut -d ' ' -f 1)"; build $(echo $entry | cut -d ' ' -f 2) || break; done
+    ```
+
+## Build Mac Components
+
+1. Ensure no pre-existing old virtual machine, then turn on and enter the system
+
+    ```
+    $ cd ~/code/habitat/components/hab/mac
+    $ vagrant destroy
+    $ vagrant up
+    $ vagrant ssh
+    ```
+
+1. Have the secret core origin key ready for pasting into the terminal. The `mac-build.sh` script will interactively prompt for pasting the key contents if no core origin key is installed on the VM.
+
+1. Build Hab for Mac
+
+    ```
+    $ cd /src/components/hab/mac
+    $ sudo ./mac-build.sh
+    ```
+
+## Build Windows Components
+
+1. Ensure no pre-existing old virtual machine, then provision a new Windows machine
+
+    ```
+    $ cd ~/code/habitat/support/win
+    $ vagrant destroy
+    $ export ORIGIN_KEY=$(hab origin key export core --type secret)
+    $ vagrant up
+    ```
+
+The script provisioner in the Vagrantfile will extract the core origin key from your environment and feed it to a powershell script on the Windows machine for import. It will also pull down all dependencies and build the windows hab binary.
+
+## Publish Release
+
+Create release in [GitHub](https://github.com/habitat-sh/habitat/releases)
+
+## Publish linux components to depot
+
+Publish each Linux component to the Depot
+
+```
+$ hab pkg upload -z <github auth token> results/*-x86_64-linux.hart
+```
+
+## Release to Bintray
+
+1. On your workstation, change your code directory and enter a studio
 
     ```
     $ cd ~/code
     $ hab studio enter
     ```
 
-1. Build each of the following components with the [instructions below](#how-to-build-a-linux-component)
-  * hab - `habitat/components/hab`
-  * hab-dynamic - `habitat/components/hab/dynamic`
-  * hab-sup - `habitat/components/sup`
-  * hab-sup-static - `habitat/components/sup/static`
-  * hab-director - `habitat/components/director`
-1. [Build Mac Components](#how-to-build-mac-components)
+1. Install the Bintray publishing code and export your credentials
 
-## Publish Release
+    ```
+    $ hab install core/hab-bintray-publish
+    $ export BINTRAY_USER=yourusername BINTRAY_KEY=yourkey BINTRAY_PASSPHRASE=commongpgkeypassphrase
+    ```
 
-1. Create release in GitHub
-1. Publish each Linux component to depot (`hab pkg upload results/*-x86_64-linux.hart`)
-1. [Release to Bintray](components/bintray-publish/README.md)
-1. Drink beer
+1. Publish the new Docker Studio image
+    ```
+    $ hab pkg exec core/hab-bintray-publish publish-studio
+    ```
+
+1. Publish the Linux, Mac and Windows artifacts by selecting the appropriate `.hart` file
+
+    ```
+    $ hab pkg exec core/hab-bintray-publish publish-hab \
+      ./results/core-hab-0.10.2-20160930230245-x86_64-linux.hart
+    $ hab pkg exec core/hab-bintray-publish publish-hab \
+      ./habitat/components/hab/mac/results/core-hab-0.10.2-20160930230245-x86_64-darwin.hart
+    $ hab pkg exec core/hab-bintray-publish publish-hab \
+      ./habitat/components/hab/win/results/core-hab-0.10.2-20160930230245-x86_64-windows.hart
+    ```
+
+More documentation for the Bintray releasing software can be found in the component's [Readme](components/bintray-publish/README.md).
+
+# Drink beer
 
 ## Bump Version
 
@@ -151,53 +288,3 @@ from the master branch on a bi-weekly schedule occurring every other Thursday.
   1. habitat (Chef Slack)
   1. general (Habitat Slack)
   1. announcements (Habitat Slack)
-
-# How-To: Build a Linux Component
-
-Before we begin a build of a plan we first need to determine which other plans from the Habitat
-and core-plans repository depend on it and re-build each of those packages after we build our
-target component.
-
-> note: Dependency re-build will later be handled automatically by the Builder service
-
-1. From outside of a studio, change into your code directory and run the build-dependent-order tool with the component's package identifier as the first argument. This will output a list of dependent packages. In the following example we will assume we are rebuilding `core/hab`
-
-    ```
-    $ cd ~/code
-    $ rm build.manifest
-    $ find core-plans habitat -name plan.sh | ./core-plans/bin/build-dependent-order.rb core/hab > build.manifest
-    ```
-
-1. From within a studio, run the build command *first* for the package we specified to build-dependent-order (in this case `core/hab`)
-
-    ```
-    $ cd ~/code
-    $ hab studio enter
-    > build habitat/components/hab
-    ```
-
-1. Now run the build command for each package path output by build-dependent-order
-
-    ```
-    $ cat build.manifest | while read entry; do echo "Building $(echo $entry | cut -d ' ' -f 1)"; build $(echo $entry | cut -d ' ' -f 2) || break; done
-    ```
-
-# How-To: Build Mac Components
-
-1. Ensure no pre-existing old virtual machine, then turn on and enter the system
-
-	```
-	$ cd ~/code/habitat/components/hab/mac
-	$ vagrant destroy
-	$ vagrant up
-	$ vagrant ssh
-	```
-
-1. Have the secret core origin key ready for pasting into the terminal. The `mac-build.sh` script will interactively prompt for pasting the key contents if no core origin key is installed on the VM.
-
-1. Build Hab for Mac
-
-	```
-	$ cd /src/components/hab/mac
-	$ sudo ./mac-build.sh
-	```

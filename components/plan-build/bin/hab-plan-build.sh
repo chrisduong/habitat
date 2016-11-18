@@ -352,6 +352,8 @@ pkg_lib_dirs=()
 pkg_bin_dirs=()
 # The path inside a package that contains header files - used in `CFLAGS`
 pkg_include_dirs=()
+# The path(s) inside a package that contain pkg-config (.pc) files
+pkg_pconfig_dirs=()
 # The command to run the service - must not fork or return
 pkg_svc_run=''
 # An array of ports to expose.
@@ -379,6 +381,13 @@ graceful_exit=true
 
 # We want everything to be build as `rwx-r-x-r-x`
 umask 0022
+
+# In order to ensure that the external environment does not affect the build
+# time behavior of a Plan, we explicitly unset several know environment
+# variables which are known to be used by underlying autoconf-like tools
+# and other build software.
+unset TERMINFO
+
 
 # ## Private/Internal helper functions
 #
@@ -1181,7 +1190,7 @@ abspath() {
 # download_file http://example.com/file.tar.gz file.tar.gz abc123...
 # # File matches checksum: download is skipped, local file is used
 # download_file http://example.com/file.tar.gz file.tar.gz ohnoes...
-# # File donesn't match checksum: local file removed, download attempted
+# # File doesn't match checksum: local file removed, download attempted
 # ```
 #
 # Will return 0 if a file was downloaded or if a valid cached file was found.
@@ -1318,6 +1327,11 @@ fix_interpreter() {
       if [[ ! -f $t ]]; then
         debug "Ignoring non-file target: ${t}"
         continue
+      fi
+
+      # Resolve symbolic links to fix the actual file instead of replacing it
+      if [[ -L $t ]]; then
+        t="$(readlink --canonicalize --no-newline "$t")"
       fi
 
       build_line "Replacing '${interpreter_old}' with '${interpreter_new}' in '${t}'"
@@ -1883,13 +1897,28 @@ _build_metadata() {
   fi
 
   local pconfig_path_part=""
-  for inc in "${pkg_pconfig_dirs[@]}"; do
-    if [[ -z "$pconfig_path_part" ]]; then
-      pconfig_path_part="${pkg_prefix}/${inc}"
-    else
-      pconfig_path_part="${pconfig_path_part}:${pkg_prefix}/${inc}"
-    fi
-  done
+  if [ ${#pkg_pconfig_dirs[@]} -eq 0 ]; then
+    # Plan doesn't define pkg-config paths so let's try to find them in the conventional locations
+    local locations=(lib/pkgconfig share/pkgconfig)
+    for dir in "${locations[@]}"; do
+      if [[ -d "${pkg_prefix}/${dir}" ]]; then
+        if [[ -z "$pconfig_path_part" ]]; then
+          pconfig_path_part="${pkg_prefix}/${dir}"
+        else
+          pconfig_path_part="${pconfig_path_part}:${pkg_prefix}/${dir}"
+        fi
+      fi
+    done
+  else
+    # Plan explicitly defines pkg-config paths so we don't provide defaults
+    for inc in "${pkg_pconfig_dirs[@]}"; do
+      if [[ -z "$pconfig_path_part" ]]; then
+        pconfig_path_part="${pkg_prefix}/${inc}"
+      else
+        pconfig_path_part="${pconfig_path_part}:${pkg_prefix}/${inc}"
+      fi
+    done
+  fi
   if [[ -n "${pconfig_path_part}" ]]; then
     echo $pconfig_path_part > $pkg_prefix/PKG_CONFIG_PATH
   fi
@@ -1980,7 +2009,24 @@ do_build_config() {
 do_default_build_config() {
   build_line "Writing configuration"
   if [[ -d "$PLAN_CONTEXT/config" ]]; then
-    cp -r "$PLAN_CONTEXT/config" $pkg_prefix
+    if [ -z "${HAB_CONFIG_EXCLUDE:-}" ]; then
+      # HAB_CONFIG_EXCLUDE not set, use defaults
+      config_exclude_exts=("*.sw?" "*~" "*.bak")
+    else
+      IFS=',' read -a config_exclude_exts <<< "$HAB_CONFIG_EXCLUDE"
+    fi
+    find_exclusions=""
+    for ext in "${config_exclude_exts[@]}"; do
+      find_exclusions+=" ! -name $ext"
+    done
+    find "$PLAN_CONTEXT/config" $find_exclusions | while read FILE
+    do
+      if [[ -d "$FILE" ]]; then
+        mkdir "$pkg_prefix${FILE#$PLAN_CONTEXT}"
+      else
+        cp "$FILE" "$pkg_prefix${FILE#$PLAN_CONTEXT}"
+      fi
+    done
     chmod 755 $pkg_prefix/config
   fi
   if [[ -d "$PLAN_CONTEXT/hooks" ]]; then
@@ -2022,6 +2068,7 @@ do_default_build_service() {
       build_line "Writing ${pkg_prefix}/run script to run ${pkg_svc_run} as ${pkg_svc_user}:${pkg_svc_group}"
       cat <<EOT >> $pkg_prefix/run
 #!/bin/sh
+export HOME=$pkg_svc_data_path
 cd $pkg_svc_path
 
 if [ "\$(whoami)" = "root" ]; then
@@ -2283,6 +2330,9 @@ if [[ -n "$HAB_ORIGIN" ]]; then
   pkg_origin="$HAB_ORIGIN"
 fi
 
+# Validate metadata
+build_line "Validating plan metadata"
+
 # Test for all required metadata keys
 required_variables=(
   pkg_name
@@ -2296,6 +2346,12 @@ do
     exit_with "Failed to build. '${var}' must be set." 1
   fi
 done
+
+# Test to ensure package name contains only valid characters
+if [[ ! "${pkg_name}" =~ ^[A-Za-z0-9_-]+$ ]];
+then
+  exit_with "Failed to build. Package name '${pkg_name}' contains invalid characters." 1
+fi
 
 # Pass over `$pkg_svc_run` to replace any `$pkg_name` placeholder tokens
 # from prior pkg_svc_* variables that were set before the Plan was loaded.

@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 use error::{Error, Result};
 use fs::{self, PKG_PATH};
-use package::{Identifiable, MetaFile, PackageIdent};
+use package::{Identifiable, MetaFile, PackageIdent, Target, PackageTarget};
 
 #[derive(Clone, Debug)]
 pub struct PackageInstall {
@@ -44,6 +44,17 @@ impl PackageInstall {
     /// An optional `fs_root` path may be provided to search for a package that is mounted on a
     /// filesystem not currently rooted at `/`.
     pub fn load(ident: &PackageIdent, fs_root_path: Option<&Path>) -> Result<PackageInstall> {
+        let package_install = try!(Self::resolve_package_install(ident, fs_root_path));
+        let package_target = try!(package_install.target());
+        match package_target.validate() {
+            Ok(()) => Ok(package_install),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn resolve_package_install(ident: &PackageIdent,
+                               fs_root_path: Option<&Path>)
+                               -> Result<PackageInstall> {
         let fs_root_path = fs_root_path.unwrap_or(Path::new("/"));
         let package_root_path = fs_root_path.join(PKG_PATH);
         if !package_root_path.exists() {
@@ -157,31 +168,29 @@ impl PackageInstall {
     /// sorted order).
     pub fn runtime_path(&self) -> Result<String> {
         let mut idents = HashSet::new();
-        let mut run_path = String::new();
-        for path in try!(self.paths()) {
-            run_path.push_str(&path.to_string_lossy());
-            idents.insert(self.ident().clone());
-        }
+        let mut run_paths: Vec<PathBuf> = Vec::new();
+
+        let mut p = try!(self.paths());
+        run_paths.append(&mut p);
+        idents.insert(self.ident().clone());
         let deps: Vec<PackageInstall> = try!(self.load_deps());
         for dep in deps.iter() {
-            for path in try!(dep.paths()) {
-                run_path.push(':');
-                run_path.push_str(&path.to_string_lossy());
-                idents.insert(dep.ident().clone());
-            }
+            let mut p = try!(dep.paths());
+            run_paths.append(&mut p);
+            idents.insert(dep.ident().clone());
         }
         let tdeps: Vec<PackageInstall> = try!(self.load_tdeps());
         for dep in tdeps.iter() {
             if idents.contains(dep.ident()) {
                 continue;
             }
-            for path in try!(dep.paths()) {
-                run_path.push(':');
-                run_path.push_str(&path.to_string_lossy());
-                idents.insert(dep.ident().clone());
-            }
+            let mut p = try!(dep.paths());
+            run_paths.append(&mut p);
+            idents.insert(dep.ident().clone());
         }
-        Ok(run_path)
+
+        let p = env::join_paths(&run_paths).expect("Failed to build path string");
+        Ok(p.into_string().expect("Failed to convert path to utf8 string"))
     }
 
     pub fn installed_path(&self) -> &PathBuf {
@@ -239,6 +248,13 @@ impl PackageInstall {
         match self.read_metafile(MetaFile::SvcGroup) {
             Ok(body) => Ok(Some(body)),
             Err(Error::MetaFileNotFound(MetaFile::SvcGroup)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    pub fn target(&self) -> Result<PackageTarget> {
+        match self.read_metafile(MetaFile::Target) {
+            Ok(body) => PackageTarget::from_str(&body),
             Err(e) => Err(e),
         }
     }

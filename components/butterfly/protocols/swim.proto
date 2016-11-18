@@ -1,0 +1,110 @@
+syntax = "proto2";
+
+message Member {
+  optional string id = 1;
+  optional uint64 incarnation = 2;
+  optional string address = 3;
+  optional int32 swim_port = 4;
+  optional int32 gossip_port = 5;
+  optional bool persistent = 6 [default = false];
+}
+
+message Ping {
+  optional Member from = 1;
+  optional Member forward_to = 2;
+}
+
+message Ack {
+  optional Member from = 1;
+  optional Member forward_to = 2;
+}
+
+message PingReq {
+  optional Member from = 1;
+  optional Member target = 2;
+}
+
+message Membership {
+  enum Health { ALIVE = 1; SUSPECT = 2; CONFIRMED = 3; };
+
+  optional Member member = 1;
+  optional Health health = 2;
+}
+
+message Election {
+  enum Status { Running = 1; NoQuorum = 2; Finished = 3; };
+
+  optional string member_id = 1;
+  optional string service_group = 2;
+  optional uint64 term = 3;
+  optional uint64 suitability = 4;
+  optional Status status = 5;
+  repeated string votes = 6;
+}
+
+message Service {
+  optional string member_id = 1;
+  optional string service_group = 2;
+  optional uint64 incarnation = 3;
+  optional string ip = 4;
+  optional string hostname = 5;
+  optional uint32 port = 6;
+  repeated uint32 exposes = 7;
+}
+
+message ServiceConfig {
+  optional string service_group = 1;
+  optional uint64 incarnation = 2;
+  optional bool encrypted = 3;
+  optional bytes config = 4;
+}
+
+message ServiceFile {
+  optional string service_group = 1;
+  optional uint64 incarnation = 2;
+  optional bool encrypted = 3;
+  optional string filename = 4;
+  optional bytes body = 5;
+}
+
+message Swim {
+  enum Type { PING = 1; ACK = 2; PINGREQ = 3; };
+
+  // Identifies which field is filled in.
+  required Type type = 1;
+
+  // Optional
+  optional Ping ping = 2;
+  optional Ack ack = 3;
+  optional PingReq pingreq = 4;
+  repeated Membership membership = 5;
+}
+
+message Rumor {
+  enum Type {
+    Member = 1;
+    Service = 2;
+    Election = 3;
+    ServiceConfig = 4;
+    ServiceFile = 5;
+    Fake = 6;
+    Fake2 = 7;
+  }
+
+  required Type type = 1;
+  repeated string tag = 2;
+  optional string from_id = 3;
+
+  // Everything else must be optional
+  optional Membership member = 4;
+  optional Service service = 5;
+  optional ServiceConfig service_config = 6;
+  optional ServiceFile service_file = 7;
+  optional Election election = 8;
+}
+
+message Wire {
+  optional bool encrypted = 1;
+  optional bytes nonce = 2;
+  optional bytes payload = 3;
+}

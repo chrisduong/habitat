@@ -63,12 +63,11 @@ use ansi_term::Colour::Yellow;
 use common::command::package::install;
 use common::ui::UI;
 use depot_client::Client;
-use hcore::crypto::default_cache_key_path;
-use hcore::fs::{cache_artifact_path, FS_ROOT_PATH};
+use hcore::fs::{am_i_root, cache_artifact_path, FS_ROOT_PATH};
 use hcore::package::PackageIdent;
 
 use {PRODUCT, VERSION};
-use error::Result;
+use error::{Error, Result};
 use config::{gconfig, UpdateStrategy};
 use package::Package;
 use topology::{self, Topology};
@@ -85,6 +84,14 @@ static LOGKEY: &'static str = "CS";
 /// * Fails if an unknown topology was specified on the command line
 pub fn package() -> Result<()> {
     let mut ui = UI::default();
+    if !am_i_root() {
+        try!(ui.warn("Running the Habitat Supervisor requires root or administrator privileges. \
+                      Please retry this command as a super user or use a privilege-granting \
+                      facility such as sudo."));
+        try!(ui.br());
+        return Err(sup_error!(Error::RootRequired));
+    }
+
     match Package::load(gconfig().package(), None) {
         Ok(mut package) => {
             let update_strategy = gconfig().update_strategy();
@@ -113,8 +120,7 @@ pub fn package() -> Result<()> {
                                                                PRODUCT,
                                                                VERSION,
                                                                Path::new(FS_ROOT_PATH),
-                                                               &cache_artifact_path(None),
-                                                               &default_cache_key_path(None)));
+                                                               &cache_artifact_path(None)));
                         package = try!(Package::load(&new_pkg_data, None));
                     } else {
                         outputln!("Already running latest.");
@@ -135,8 +141,7 @@ pub fn package() -> Result<()> {
                                         PRODUCT,
                                         VERSION,
                                         Path::new(FS_ROOT_PATH),
-                                        &cache_artifact_path(None),
-                                        &default_cache_key_path(None)))
+                                        &cache_artifact_path(None)))
                 }
                 None => {
                     outputln!("Searching for {} in remote {}",
@@ -148,8 +153,7 @@ pub fn package() -> Result<()> {
                                         PRODUCT,
                                         VERSION,
                                         Path::new(FS_ROOT_PATH),
-                                        &cache_artifact_path(None),
-                                        &default_cache_key_path(None)))
+                                        &cache_artifact_path(None)))
                 }
             };
             let package = try!(Package::load(&new_pkg_data, None));

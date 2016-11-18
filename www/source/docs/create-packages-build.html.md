@@ -13,8 +13,6 @@ As part of building a package, it needs to be signed with a secret origin key at
 
     hab origin key generate originname
 
-   > Note: If your host machine is Linux, you must run the `hab` CLI as root through the `sudo` command.
-
 The `hab-origin` subcommand will place originname-_timestamp_.sig.key and originname-_timestamp_.pub files (the origin key pair) in the `$HOME/.hab/cache/keys` directory. If you're creating origin keys in the studio container or you are running as root on a Linux machine, your keys will be stored in `/hab/cache/keys`.
 
 Because the secret key is used to sign your package, it should not be shared freely; however, if anyone wants to download and use your package, then they must have your public key (.pub) installed in their local `$HOME/.hab/cache/keys` or `/hab/cache/keys` directory. Public keys will be downloaded from the depot by the supervisor, if needed.
@@ -62,7 +60,7 @@ A non-interactive build is one in which Habitat creates a studio for you, builds
 
 3. The resulting package is inside a directory called `results`, along with any build logs and a build report (`last_build.env`) that includes machine-parseable metadata about the build.
 
-By default, the studio is reset to a clean state after the package is built; however you can reuse a previous studio when building your package by specifying the `-R` option when calling the `hab pkg build` subcommand.
+By default, the studio is reset to a clean state after the package is built; however, *if you are using the Linux version of `hab`*, you can reuse a previous studio when building your package by specifying the `-R` option when calling the `hab pkg build` subcommand.
 
 For more information on how to define a plan and build a package, how to create origin signing keys, and how to run a Habitat service, see the [getting started tutorial](/tutorials/getting-started-overview).
 

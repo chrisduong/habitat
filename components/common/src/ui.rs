@@ -82,6 +82,10 @@ impl UI {
         Self::write_heading(&mut self.shell.out, Colour::Blue, '★', message)
     }
 
+    pub fn is_a_tty(&self) -> bool {
+        self.shell.input.isatty && self.shell.out.isatty && self.shell.err.isatty
+    }
+
     pub fn status<T: fmt::Display>(&mut self, status: Status, message: T) -> Result<()> {
         let ref mut stream = self.shell.out;
         let (symbol, status_str, color) = status.parts();
@@ -122,18 +126,24 @@ impl UI {
 
     pub fn fatal<T: fmt::Display>(&mut self, message: T) -> Result<()> {
         let ref mut stream = self.shell.err;
+        let formatted_message = message.to_string()
+            .lines()
+            .map(|line| format!("✗✗✗ {}", line))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         match stream.is_colored() {
             true => {
                 try!(write!(stream,
                             "{}\n",
                             Colour::Red.bold()
-                                .paint(format!("✗✗✗\n✗✗✗ {}\n✗✗✗",
-                                               message.to_string()))));
+                                .paint(format!("✗✗✗\n{}\n✗✗✗",
+                                               formatted_message))));
             }
             false => {
                 try!(write!(stream,
-                            "✗✗✗\n✗✗✗ {}\n✗✗✗\n",
-                            message.to_string()));
+                            "✗✗✗\n{}\n✗✗✗\n",
+                            formatted_message));
             }
         }
         try!(stream.flush());

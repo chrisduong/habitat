@@ -5,11 +5,14 @@ pkg_maintainer="Jamie Winsor <reset@chef.io>"
 pkg_license=('Apache-2.0')
 pkg_source=nosuchfile.tar.gz
 pkg_bin_dirs=(bin)
-pkg_deps=(core/glibc core/openssl core/gcc-libs core/zeromq core/libsodium core/libarchive)
+pkg_deps=(core/glibc core/openssl core/gcc-libs core/zeromq core/libsodium core/libarchive
+  core/zlib core/hab-studio core/curl)
 pkg_build_deps=(core/make core/cmake core/protobuf core/protobuf-rust core/coreutils core/cacerts
-  core/rust core/gcc core/pkg-config core/zlib)
+  core/rust core/gcc core/pkg-config)
 bin="bldr-worker"
 pkg_svc_run="$bin start -c ${pkg_svc_path}/config.toml"
+pkg_svc_user="root"
+pkg_svc_group="root"
 
 do_prepare() {
   # Can be either `--release` or `--debug` to determine cargo build strategy
@@ -36,12 +39,14 @@ do_prepare() {
   export LIBZMQ_PREFIX="$(pkg_path_for zeromq)"
 
   # Used by libssh2-sys
-  export DEP_OPENSSL_ROOT="$(pkg_path_for openssl)"
   export DEP_Z_ROOT="$(pkg_path_for zlib)"
   export DEP_Z_INCLUDE="$(pkg_path_for zlib)/include"
 }
 
 do_build() {
+  export LIBRARY_PATH=$LIBZMQ_PREFIX/lib
+  build_line "Setting LIBRARY_PATH=$LIBRARY_PATH"
+
   pushd $PLAN_CONTEXT/.. > /dev/null
   cargo build ${build_type#--debug} --target=$rustc_target --verbose
   popd > /dev/null

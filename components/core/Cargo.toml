@@ -1,36 +1,36 @@
 [package]
 name = "habitat_core"
 version = "0.0.0"
-authors = ["Adam Jacob <adam@chef.io>", "Jamie Winsor <reset@chef.io>", "Fletcher Nichol <fnichol@chef.io>", "Joshua Timberman <joshua@chef.io>", "Dave Parfitt <dparfitt@chef.io>"]
+authors = ["Adam Jacob <adam@chef.io>", "Jamie Winsor <reset@chef.io>", "Fletcher Nichol <fnichol@chef.io>", "Joshua Timberman <joshua@chef.io>", "Dave Parfitt <dparfitt@chef.io>", "Steven Murawski <smurawski@chef.io>"]
 workspace = "../../"
+build = "build.rs"
+
+[build-dependencies]
+gcc = "0.3"
 
 [dependencies]
 errno = "*"
 lazy_static = "*"
 libarchive = "*"
 libc = "*"
+libsodium-sys = "*"
 log = "*"
 regex = "*"
 rustc-serialize = "*"
+sodiumoxide = "*"
+time = "*"
 toml = "*"
 url = "*"
-
-### !!NOTE!! sodiumoxide and libsodium-sys are using an override, via the
-### .cargo/config file. When https://github.com/dnaq/sodiumoxide/pull/103
-### is merged, we can get rid of this hack.
-sodiumoxide = "*"
-libsodium-sys = "*"
-time = "*"
 
 [target.'cfg(not(windows))'.dependencies]
 users = "*"
 
-[dev-dependencies]
-tempdir = "*"
+[target.'cfg(windows)'.dependencies.habitat_win_users]
+path = "../win-users"
 
-[dev-dependencies.hyper]
-version = "*"
-default-features = false
+[dev-dependencies]
+hyper = "*"
+tempdir = "*"
 
 [features]
 functional = []

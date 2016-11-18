@@ -61,7 +61,6 @@ module HabTesting
 
 
     TestDir = Struct.new(:path, :caller)
-
     # The intent of the Platform class is to store any platform-independent
     # variables.
     class Platform
@@ -236,20 +235,27 @@ module HabTesting
 
         def initialize
             super
+            bin_base = ENV['HAB_TEST_BIN_DIR'] || "/src/target/debug"
             @cleanup_filename = "cleanup_#{SecureRandom.hex(10)}.sh"
-            @hab_bin="/src/target/debug/hab"
+            @hab_bin="#{bin_base}/hab"
             @hab_key_cache = "/hab/cache/keys"
             @hab_org = "org_#{unique_name()}"
             @hab_origin = "origin_#{unique_name()}"
             @hab_pkg_path = "/hab/pkgs"
             @hab_ring = "ring_#{unique_name()}"
-            @hab_sup_bin = "/src/target/debug/hab-sup"
+            @hab_sup_bin = "#{bin_base}/hab-sup"
             @hab_svc_path = "/hab/svc"
             @hab_user = "user_#{unique_name()}"
             @log_dir = "./logs"
             @log_name = "hab_test-#{Time.now.utc.iso8601.gsub(/\:/, '-')}.log"
 
             banner()
+        end
+
+        def local_ip 
+            # note, this is defined in LinuxPlatform, because that's the only
+            # place it will work!
+            `/sbin/ip route get 8.8.8.8 | /usr/bin/awk '{printf \"%s\", $NF; exit}'`
         end
 
         def common_setup
@@ -301,6 +307,9 @@ module HabTesting
             if not @cleanup
                 puts "WARNING: not cleaning up testing environment"
                 puts "Please run #{@cleanup_filename} manually"
+                if ENV['TRAVIS'] then
+                    `cat #{log_file_name()}`
+                end
             end
 
         end
@@ -332,34 +341,65 @@ module HabTesting
             puts "X" * 80
         end
 
+        # starts a supervisor, dev MUST read output or process may block
+        # When the supplied block exits, kill the supervisor
+        def sup_spawn(cmdline, **cmd_options, &block)
+            puts "X" * 80 if @cmd_debug
+            puts cmd_options if @cmd_debug
+            bin = cmd_options[:bin] || @hab_sup_bin
+            fullcmdline = "#{bin} #{cmdline}"
+
+            Open3.popen2(fullcmdline) do |stdin, stdout_err, wait_thread|
+                block.call(stdin, stdout_err, wait_thread)
+                puts "Sending KILL to supervisor"
+                Process.kill('KILL', wait_thread.pid)
+            end
+        end
+
+        # calls the compiled hab binary
+        def hab_cmd_expect(cmdline, desired_output, **cmd_options)
+            cmd_options[:bin] = @hab_bin
+            cmd_expect(cmdline, desired_output, cmd_options)
+        end
+
+        # calls the compiled hab-sup binary
+        def sup_cmd_expect(cmdline, desired_output, **cmd_options)
+            cmd_options[:bin] = @hab_sup_bin
+            cmd_expect(cmdline, desired_output, cmd_options)
+
+        end
+
         # execute a possibly long-running process and wait for a particular string
         # in it's output. If the output is found, kill the process and return
         # it's exit status. Otherwise, raise an exception so specs fail quickly.
+        # This form allows you to specify an alternate binary via cmd_options :bin
+        # parameter, however the default is @hab_bin. Note if you're trying to
+        # run a sup command via `hab`, you might not be hitting the compiled `hab-sup`
+        # binary.
         def cmd_expect(cmdline, desired_output, **cmd_options)
             puts "X" * 80 if @cmd_debug
             puts cmd_options if @cmd_debug
             debug = cmd_options[:debug] || @cmd_debug
 
+            bin = cmd_options[:bin] || @hab_bin
             timeout = cmd_options[:timeout_seconds] || @cmd_timeout_seconds
             kill_when_found = cmd_options[:kill_when_found] || false
             show_env() if debug
             # passing output to | tee
-            #fullcmdline = "#{@hab_bin} #{cmdline} | tee -a #{log_file_name()} 2>&1"
-            fullcmdline = "#{@hab_bin} #{cmdline}"
+            fullcmdline = "#{bin} #{cmdline}"
             # record the command we'll be running in the log file
             `echo #{fullcmdline} >> #{log_file_name()}`
             puts " → #{fullcmdline}"
-
             output_log = open(log_file_name(), 'a')
             begin
-                Open3.popen3(fullcmdline) do |stdin, stdout, stderr, wait_thread|
+                Open3.popen2e(ENV, fullcmdline) do |stdin, stdout_err, wait_thread|
                     @all_children << [fullcmdline, wait_thread.pid]
                     puts "Started child process id #{wait_thread[:pid]}" if debug
                     found = false
                     begin
                         Timeout::timeout(timeout) do
                             loop do
-                                line = stdout.readline()
+                                line = stdout_err.readline()
                                 output_log.puts line
                                 puts line if debug
                                 if line.include?(desired_output) then

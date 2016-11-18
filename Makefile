@@ -34,7 +34,7 @@ else
 endif
 
 BIN = director hab sup
-LIB = builder-dbcache builder-protocol common core builder-depot-client http-client net
+LIB = builder-dbcache builder-protocol common core builder-depot-client http-client net butterfly
 SRV = builder-api builder-admin builder-depot builder-router builder-jobsrv builder-sessionsrv builder-vault builder-worker
 ALL = $(BIN) $(LIB) $(SRV)
 VERSION := $(shell cat VERSION)
@@ -121,7 +121,7 @@ distclean: ## fully cleans up project tree and any associated Docker images and 
 .PHONY: distclean
 
 image: ## create an image
-	if [ -n "${force}" -o -n "${refresh}" -o -z "`$(docker_cmd) images -q $(dimage)`" ]; then \
+	@if [ -n "${force}" -o -n "${refresh}" -o -z "`$(docker_cmd) images -q $(dimage)`" ]; then \
 		if [ -n "${force}" ]; then \
 		  $(docker_cmd) build --no-cache $(build_args) -t $(dimage) .; \
 		else \
@@ -174,6 +174,10 @@ $(foreach component,$(ALL),$(eval $(call BLDR_BUILD,$(component))))
 
 bldr-run: bldr-build
 	support/mac/bin/forego start -f support/Procfile.mac -e support/bldr.env
+
+bldr-shell: build-srv ## launches a development shell with forwarded ports but doesn't run anything
+	$(bldr_run)
+.PHONY: bldr-shell
 
 bldr-run-shell: build-srv ## launches a development shell running the API
 	$(bldr_run) sh -c '/src/support/linux/bin/forego start -f support/Procfile.linux -e support/bldr.env'

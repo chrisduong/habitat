@@ -12,13 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-extern crate libc;
-
-use std;
-use std::ffi::{CString, OsString};
-use hcore::os::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::ptr;
 
 use common;
 use common::ui::{Status, UI};
@@ -32,38 +26,6 @@ use error::{Error, Result};
 
 #[allow(dead_code)] // Currently only used on Linux platforms
 const MAX_RETRIES: u8 = 4;
-
-/// Makes an `execv(3)` system call to become a new program.
-///
-/// Note that if successful, this function will not return.
-///
-/// # Failures
-///
-/// * Command and/or command arguments cannot be converted into `CString`
-pub fn exec_command(command: PathBuf, args: Vec<OsString>) -> Result<()> {
-    // A massive thanks to the `exec` crate which pointed to the correct invocation
-    // behavior--namely to pass null-terminated string pointers.
-    //
-    // Source: https://github.com/faradayio/exec-rs/blob/master/src/lib.rs
-
-    debug!("Calling execv: ({:?}) {:?}", command.display(), &args);
-    let prog_cstring = try!(CString::new(command.as_os_str().as_bytes()));
-    let arg_cstrings = try!(args.into_iter()
-        .map(|arg| CString::new(arg.as_os_str().as_bytes()))
-        .collect::<std::result::Result<Vec<_>, _>>());
-    let mut arg_charptrs: Vec<_> = arg_cstrings.iter()
-        .map(|arg| arg.as_bytes_with_nul().as_ptr() as *const i8)
-        .collect();
-    arg_charptrs.insert(0,
-                        prog_cstring.clone().as_bytes_with_nul().as_ptr() as *const i8);
-    arg_charptrs.push(ptr::null());
-
-    unsafe {
-        libc::execv(prog_cstring.as_bytes_with_nul().as_ptr() as *const i8,
-                    arg_charptrs.as_mut_ptr());
-    }
-    Ok(())
-}
 
 /// Returns the absolute path to the given command from the given package identifier.
 ///
@@ -103,8 +65,7 @@ pub fn command_from_pkg(ui: &mut UI,
                                                           PRODUCT,
                                                           VERSION,
                                                           fs_root_path,
-                                                          &cache_artifact_path(None),
-                                                          cache_key_path));
+                                                          &cache_artifact_path(None)));
             command_from_pkg(ui, &command, &ident, &cache_key_path, retry + 1)
         }
         Err(e) => return Err(Error::from(e)),

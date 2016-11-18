@@ -108,11 +108,11 @@ pub mod exec {
     use std::env;
     use std::ffi::OsString;
 
+    use hcore::os::process;
     use hcore::package::{PackageIdent, PackageInstall};
     use hcore::fs::find_command;
 
     use error::{Error, Result};
-    use exec;
 
     pub fn start(ident: &PackageIdent, command: &str, args: Vec<OsString>) -> Result<()> {
         let pkg_install = try!(PackageInstall::load(&ident, None));
@@ -129,7 +129,7 @@ pub mod exec {
             display_args.push_str(arg.to_string_lossy().as_ref());
         }
         info!("Running: {}", display_args);
-        exec::exec_command(command, args)
+        Ok(try!(process::become_command(command, args)))
     }
 }
 
@@ -172,7 +172,6 @@ pub mod export {
 
         use common::command::package::install;
         use common::ui::{Status, UI};
-        use hcore::crypto::default_cache_key_path;
         use hcore::fs::{cache_artifact_path, FS_ROOT_PATH};
         use hcore::package::{PackageIdent, PackageInstall};
         use hcore::url::default_depot_url;
@@ -228,8 +227,7 @@ pub mod export {
                                         PRODUCT,
                                         VERSION,
                                         Path::new(FS_ROOT_PATH),
-                                        &cache_artifact_path(None),
-                                        &default_cache_key_path(None)));
+                                        &cache_artifact_path(None)));
                 }
             }
             let pkg_arg = OsString::from(&ident.to_string());
@@ -377,11 +375,11 @@ pub mod search {
             0 => println!("No packages found that match '{}'", st),
             _ => {
                 for p in &packages {
-                    println!("{}/{}/{}/{}",
-                             p.origin,
-                             p.name,
-                             p.version.clone().unwrap(),
-                             p.release.clone().unwrap());
+                    if let (&Some(ref version), &Some(ref release)) = (&p.version, &p.release) {
+                        println!("{}/{}/{}/{}", p.origin, p.name, version, release);
+                    } else {
+                        println!("{}/{}", p.origin, p.name);
+                    }
                 }
                 if more {
                     println!("Search returned too many items, only showing the first {}",
@@ -435,6 +433,7 @@ pub mod upload {
     use std::path::{Path, PathBuf};
 
     use common::ui::{Status, UI};
+    use common::command::package::install::{RETRIES, RETRY_WAIT};
     use depot_client::{self, Client};
     use hcore::crypto::artifact::get_artifact_header;
     use hcore::crypto::keys::parse_name_with_rev;
@@ -443,6 +442,8 @@ pub mod upload {
 
     use {PRODUCT, VERSION};
     use error::{Error, Result};
+
+    use retry::retry;
 
     /// Upload a package from the cache to a Depot. The latest version/release of the package
     /// will be uploaded if not specified.
@@ -473,6 +474,7 @@ pub mod upload {
         let depot_client = try!(Client::new(url, PRODUCT, VERSION, None));
 
         try!(ui.begin(format!("Uploading public origin key {}", &public_keyfile_name)));
+
         match depot_client.put_origin_key(&name, &rev, &public_keyfile, token, ui.progress()) {
             Ok(()) => {
                 try!(ui.status(Status::Uploaded,
@@ -495,7 +497,23 @@ pub mod upload {
                         Some(p) => PathBuf::from(p),
                         None => unreachable!(),
                     };
-                    try!(attempt_upload_dep(ui, &depot_client, token, &dep, &candidate_path));
+                    if retry(RETRIES,
+                             RETRY_WAIT,
+                             || attempt_upload_dep(ui, &depot_client, token, &dep, &candidate_path),
+                             |res| res.is_ok())
+                        .is_err() {
+                        return Err(Error::from(depot_client::Error::UploadFailed(format!("We tried \
+                                                                                          {} times \
+                                                                                          but \
+                                                                                          could \
+                                                                                          not \
+                                                                                          upload \
+                                                                                          {}. \
+                                                                                          Giving \
+                                                                                          up.",
+                                                                                         RETRIES,
+                                                                                         &dep))));
+                    }
                 }
                 Err(e) => return Err(Error::from(e)),
             }
@@ -507,7 +525,20 @@ pub mod upload {
                 Ok(())
             }
             Err(depot_client::Error::APIError(StatusCode::NotFound, _)) => {
-                try!(upload_into_depot(ui, &depot_client, token, &ident, &mut archive));
+                if retry(RETRIES,
+                         RETRY_WAIT,
+                         || upload_into_depot(ui, &depot_client, token, &ident, &mut archive),
+                         |res| res.is_ok())
+                    .is_err() {
+                    return Err(Error::from(depot_client::Error::UploadFailed(format!("We tried \
+                                                                                      {} times \
+                                                                                      but could \
+                                                                                      not upload \
+                                                                                      {}. Giving \
+                                                                                      up.",
+                                                                                     RETRIES,
+                                                                                     &ident))));
+                }
                 try!(ui.end(format!("Upload of {} complete.", &ident)));
                 Ok(())
             }
@@ -523,7 +554,7 @@ pub mod upload {
                          -> Result<()> {
         try!(ui.status(Status::Uploading, archive.path.display()));
         match depot_client.put_package(&mut archive, token, ui.progress()) {
-            Ok(()) => (),
+            Ok(_) => (),
             Err(depot_client::Error::APIError(StatusCode::Conflict, _)) => {
                 println!("Package already exists on remote; skipping.");
             }
@@ -531,7 +562,7 @@ pub mod upload {
                 return Err(Error::PackageArchiveMalformed(format!("{}", archive.path.display())));
             }
             Err(e) => return Err(Error::from(e)),
-        }
+        };
         try!(ui.status(Status::Uploaded, ident));
         Ok(())
     }
@@ -570,6 +601,33 @@ pub mod verify {
         try!(ui.status(Status::Verified,
                        format!("checksum {} signed with {}", &hash, &name_with_rev)));
         try!(ui.end(format!("Verified artifact {}.", &src.display())));
+        Ok(())
+    }
+}
+
+pub mod header {
+    use std::path::Path;
+
+    use common::ui::UI;
+    use hcore::crypto::artifact;
+    use std::io::{self, Write};
+
+    use error::Result;
+
+    pub fn start(ui: &mut UI, src: &Path) -> Result<()> {
+        try!(ui.begin(format!("Reading package header for {}", &src.display())));
+        try!(ui.para(""));
+        if let Ok(header) = artifact::get_artifact_header(src) {
+            try!(io::stdout().write(format!("Package        : {}\n", &src.display()).as_bytes()));
+            try!(io::stdout()
+                .write(format!("Format Version : {}\n", header.format_version).as_bytes()));
+            try!(io::stdout().write(format!("Key Name       : {}\n", header.key_name).as_bytes()));
+            try!(io::stdout().write(format!("Hash Type      : {}\n", header.hash_type).as_bytes()));
+            try!(io::stdout()
+                .write(format!("Raw Signature  : {}\n", header.signature_raw).as_bytes()));
+        } else {
+            try!(ui.warn("Failed to read package header."));
+        }
         Ok(())
     }
 }

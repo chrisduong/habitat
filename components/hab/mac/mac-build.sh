@@ -41,9 +41,10 @@ if (( $EUID != 0 )); then
   exit 1
 fi
 
-if [[ ! -f /bin/hab ]]; then
+if [[ ! -f /usr/local/bin/hab ]]; then
   info "Habitat CLI missing, attempting to install latest release"
-  sh $(dirname $0)/install.sh
+  mkdir -p /usr/local/bin
+  sh $(dirname $0)/../install.sh
 fi
 
 while true; do

@@ -353,6 +353,8 @@ run
   - Redirect stderr to stdout (e.g. with `exec 2>&1` at the start of the hook)
   - Call the command to execute with `exec <command> <options>` rather than running the command directly. This ensures the command is executed in the same process and that the service will restart correctly on configuration changes.
 
+  It is important to also consider what side effects the command to execute will have. For example, does the command spin off other processes in separate process groups? If so, they may not be cleaned up automatically when the system is reconfigured. In general, the command executed should behave in a manner similar to a daemon, and be able to clean up properly after itself when it receives a SIGTERM, and properly forward signals to other processes that it creates. For an even more specific example: let's say you are trying to start a node.js service. Instead of your command being `npm start`, you should use `node server.js` directly.
+
   A run hook can use the following as a template:
 
   ~~~ bash
@@ -451,7 +453,7 @@ svc_group_default
 - the effective group id
 
 ### cfg
-These are settings defined in your templatized configuration file. The values for those settings are pulled from the `default.toml` file included in your package. 
+These are settings defined in your templatized configuration file. The values for those settings are pulled from the `default.toml` file included in your package.
 
 ***
 
@@ -462,6 +464,44 @@ attach()
 : Attaches your script to an interactive debugging session, which lets you check the state of variables, call arbitrary functions, and turn on higher levels of logging by using the `set -x` command and switch.
 
   To use attach, add `attach` to any callback or part of your plan.sh file and the debugging session with start up when hab-plan-build comes to that part in the file.
+
+download_file()
+: Downloads a file from a source URL to a local file and uses an optional
+shasum to determine if an existing file can be used.
+
+  If an existing file is present and the third argument is set with a shasum
+digest, the file will be checked to see if it's valid. If so, the function
+ends early and returns 0. Otherwise, the shasums do not match so the
+file-on-disk is removed and a normal download proceeds as though no previous
+file existed. This is designed to restart an interrupted download.
+
+Any valid `wget` URL will work.
+
+Downloads every time, even if the file exists locally:
+
+~~~
+download_file http://example.com/file.tar.gz file.tar.gz
+~~~
+
+Downloads if no local file is found:
+
+~~~
+download_file http://example.com/file.tar.gz file.tar.gz abc123...
+~~~
+
+File matches checksum: download is skipped, local file is used:
+
+~~~
+download_file http://example.com/file.tar.gz file.tar.gz abc123...
+~~~
+
+File doesn't match checksum: local file removed, download attempted:
+
+~~~
+download_file http://example.com/file.tar.gz file.tar.gz ohnoes...
+~~~
+
+Will return 0 if a file was downloaded or if a valid cached file was found.
 
 pkg_path_for()
 : Returns the path for a build or runtime package dependency on stdout from the list of dependencies referenced in pkg_deps or pkg_build_deps. This is useful if you need to install or reference specific dependencies from within a callback, such as `do_build()` or `do_install()`.

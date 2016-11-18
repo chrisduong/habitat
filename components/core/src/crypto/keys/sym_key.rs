@@ -14,6 +14,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::fmt;
 
 use rustc_serialize::base64::{STANDARD, ToBase64};
 use rustc_serialize::hex::ToHex;
@@ -28,7 +29,19 @@ use super::super::{SECRET_SYM_KEY_SUFFIX, SECRET_SYM_KEY_VERSION, hash};
 
 pub type SymKey = KeyPair<(), SymSecretKey>;
 
+impl fmt::Debug for SymKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SymKey")
+    }
+}
+
 impl SymKey {
+    pub fn generate_in_memory<S: ToString>(name: S) -> Result<Self> {
+        let revision = try!(mk_revision_string());
+        let secret_key = secretbox::gen_key();
+        Ok(SymKey::new(name.to_string(), revision, Some(()), Some(secret_key)))
+    }
+
     pub fn generate_pair_for_ring<P: AsRef<Path> + ?Sized>(name: &str,
                                                            cache_key_path: &P)
                                                            -> Result<Self> {

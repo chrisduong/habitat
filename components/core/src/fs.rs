@@ -20,7 +20,10 @@ use users;
 use env as henv;
 
 /// The default filesystem root path
+#[cfg(not(target_os="windows"))]
 pub const FS_ROOT_PATH: &'static str = "/";
+#[cfg(target_os="windows")]
+pub const FS_ROOT_PATH: &'static str = concat!(env!("SYSTEMDRIVE"), "/");
 /// The default root path of the Habitat filesytem
 pub const ROOT_PATH: &'static str = "hab";
 /// The default path for any analytics related files
@@ -186,7 +189,7 @@ pub fn svc_var_path(service_name: &str) -> PathBuf {
 /// If the command represents an absolute path, then the `PATH` seaching will not be performed. If
 /// no absolute path can be found for the command, then `None` is returned.
 ///
-/// On Windows, the PATHEXT environment variable contains common extensions for commands, 
+/// On Windows, the PATHEXT environment variable contains common extensions for commands,
 /// for example allowing "docker.exe" to be found when searching for "docker".
 ///
 /// # Examples
@@ -272,7 +275,7 @@ fn find_command_with_pathext(candidate: &PathBuf) -> Option<PathBuf> {
                     }
                 }
             }
-            None => {},
+            None => {}
         };
     }
     None
@@ -298,9 +301,8 @@ mod test_find_command {
     }
 
     fn setup_empty_pathext() {
-        match env::var("PATHEXT") {
-            Ok(val) => env::remove_var("PATHEXT"),
-            Err(e) => {}
+        if env::var("PATHEXT").is_ok() {
+            env::remove_var("PATHEXT")
         }
     }
 
@@ -410,6 +412,7 @@ mod test_find_command {
             }
 
             #[test]
+            #[allow(non_snake_case)]
             fn command_exists_with_extension_in_PATHEXT() {
                 setup_environment();
                 let result = find_command("bin_with_extension");
@@ -417,6 +420,7 @@ mod test_find_command {
             }
 
             #[test]
+            #[allow(non_snake_case)]
             fn command_exists_with_extension_not_in_PATHEXT() {
                 setup_environment();
                 let result = find_command("win95_dominator");

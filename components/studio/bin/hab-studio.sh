@@ -350,8 +350,8 @@ subcommand_run() {
 new_studio() {
   # Check if a pre-existing Studio configuration is found and use that to
   # determine the type
-  if [ -s $studio_config ]; then
-    . $studio_config
+  if [ -s "$studio_config" ]; then
+    . "$studio_config"
     STUDIO_TYPE=$studio_type
   fi
 
@@ -558,7 +558,7 @@ EOF
   finish_setup
 
   # Add a Studio configuration file at the root of the filesystem
-  $bb cat <<EOF > $studio_config
+  $bb cat <<EOF > "$studio_config"
 studio_type="$studio_type"
 studio_path="$studio_path"
 studio_env_command="$studio_env_command"
@@ -607,7 +607,15 @@ record() {
       >&2 echo "Usage: record <SESSION> [CMD [ARG ..]]"
       return 1
     fi
-    name=$1; shift
+    name="$(awk -F '=' '/^pkg_name/ {print $2}' $1/plan.sh 2>/dev/null | sed "s/['\"]//g")"
+    if [[ -z "${name:-}" ]]; then
+      if [[ -f $1/habitat/plan.sh ]]; then
+        name="$(awk -F '=' '/^pkg_name/ {print $2}' $1/habitat/plan.sh 2>/dev/null | sed "s/['\"]//g")"
+      else
+        name="unknown"
+      fi
+    fi
+    shift
     cmd="${1:-${SHELL:-sh} -l}"; shift
     bb=${BUSYBOX:-}
     env="$($bb env \
@@ -617,7 +625,7 @@ record() {
     $bb mkdir -p $($bb dirname $log)
     unset BUSYBOX LOGDIR
 
-    $bb script -c "$bb env -i $env $cmd $*" $log
+    $bb script -c "$bb env -i $env $cmd $*" -e $log
   ); return $?
 }
 
@@ -645,8 +653,8 @@ enter_studio() {
   fi
   # Check if a pre-existing Studio configuration is found and use that to
   # determine the type. If no config is found, set the type to `unknown`.
-  if [ -s $studio_config ]; then
-    . $studio_config
+  if [ -s "$studio_config" ]; then
+    . "$studio_config"
     STUDIO_TYPE=$studio_type
   else
     STUDIO_TYPE=unknown
@@ -675,8 +683,8 @@ build_studio() {
   fi
   # Check if a pre-existing Studio configuration is found and use that to
   # determine the type. If no config is found, set the type to `unknown`.
-  if [ -s $studio_config ]; then
-    . $studio_config
+  if [ -s "$studio_config" ]; then
+    . "$studio_config"
     STUDIO_TYPE=$studio_type
   else
     STUDIO_TYPE=unknown
@@ -710,8 +718,8 @@ run_studio() {
   fi
   # Check if a pre-existing Studio configuration is found and use that to
   # determine the type. If no config is found, set the type to `unknown`.
-  if [ -s $studio_config ]; then
-    . $studio_config
+  if [ -s "$studio_config" ]; then
+    . "$studio_config"
     STUDIO_TYPE=$studio_type
   else
     STUDIO_TYPE=unknown
@@ -734,8 +742,8 @@ run_studio() {
 rm_studio() {
   # Check if a pre-existing Studio configuration is found and use that to
   # determine the type. If no config is found, set the type to `unknown`.
-  if [ -s $studio_config ]; then
-    . $studio_config
+  if [ -s "$studio_config" ]; then
+    . "$studio_config"
     STUDIO_TYPE=$studio_type
   else
     STUDIO_TYPE=unknown
@@ -818,6 +826,32 @@ info() {
   return 0
 }
 
+# **Internal** Exit if current user is not root.
+ensure_root() {
+  # Early return if we are root, yay!
+  if [ $($bb id -u) -eq 0 ]; then
+    return
+  fi
+
+  # Otherwise, prepare to die with message formatting similar to the `hab` program.
+  local msg
+  local fatal
+
+  warn_msg="Running Habitat Studio requires root or administrator privileges. \
+Please retry this command as a super user or use a privilege-granting facility such as sudo."
+  fatal_msg="Root or administrator permissions required to complete operation"
+
+  case "${TERM:-}" in
+    *term | xterm-* | rxvt | screen | screen-*)
+      printf -- "\033[0;33m∅ $warn_msg\033[0m\n\n\033[0;31m✗✗✗\n✗✗✗ $fatal_msg\n✗✗✗\033[0m\n"
+      ;;
+    *)
+      printf -- "∅ $warn_msg\n\n✗✗✗\n✗✗✗ $fatal_msg\n✗✗✗\n"
+      ;;
+  esac
+  exit 9
+}
+
 # **Internal** Exit the program with an error message and a status code.
 #
 # ```sh
@@ -861,6 +895,11 @@ chroot_env() {
   if [ -n "${HAB_ORIGIN:-}" ]; then
     env="$env HAB_ORIGIN=$HAB_ORIGIN"
   fi
+  # If a Habitat config filetype ignore string is set, then propogate it
+  # into the Studio's environment.
+  if [ -n "${HAB_CONFIG_EXCLUDE:-}" ]; then
+    env="$env HAB_CONFIG_EXCLUDE=$HAB_CONFIG_EXCLUDE"
+  fi
   # If HTTP proxy variables are detected in the current environment, propagate
   # them into the Studio's environment.
   if [ -n "${http_proxy:-}" ]; then
@@ -890,6 +929,9 @@ report_env_vars() {
   fi
   if [ -n "${HAB_DEPOT_URL:-}" ]; then
     info "Exported: HAB_DEPOT_URL=$HAB_DEPOT_URL"
+  fi
+  if [ -n "${HAB_CONFIG_EXCLUDE:-}" ]; then
+    info "Exported: HAB_CONFIG_EXCLUDE=$HAB_CONFIG_EXCLUDE"
   fi
   if [ -n "${http_proxy:-}" ]; then
     info "Exported: http_proxy=$http_proxy"
@@ -973,6 +1015,8 @@ version='@version@'
 author='@author@'
 # The short version of the program name which is used in logging output
 program=$($bb basename $0)
+
+ensure_root
 
 
 # ## CLI Argument Parsing

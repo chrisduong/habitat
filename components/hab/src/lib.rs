@@ -16,6 +16,7 @@ extern crate habitat_core as hcore;
 extern crate habitat_common as common;
 extern crate habitat_depot_client as depot_client;
 extern crate habitat_http_client as http_client;
+extern crate handlebars;
 
 extern crate ansi_term;
 #[macro_use]
@@ -25,6 +26,7 @@ extern crate hyper;
 extern crate log;
 extern crate pbr;
 extern crate regex;
+extern crate retry;
 extern crate rustc_serialize;
 extern crate toml;
 extern crate url;

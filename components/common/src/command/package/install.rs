@@ -39,34 +39,49 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use depot_client::Client;
+use depot_client::{self, Client};
 use hcore;
+use hcore::fs::{am_i_root, cache_key_path};
 use hcore::crypto::{artifact, SigKeyPair};
 use hcore::crypto::keys::parse_name_with_rev;
-use hcore::package::{Identifiable, PackageArchive, PackageIdent, PackageInstall};
+use hcore::package::{Identifiable, PackageArchive, PackageIdent, Target, PackageInstall};
 
 use error::{Error, Result};
 use ui::{Status, UI};
 
-pub fn start<P1: ?Sized, P2: ?Sized, P3: ?Sized>(ui: &mut UI,
-                                                 url: &str,
-                                                 ident_or_archive: &str,
-                                                 product: &str,
-                                                 version: &str,
-                                                 fs_root_path: &P1,
-                                                 cache_artifact_path: &P2,
-                                                 cache_key_path: &P3)
-                                                 -> Result<PackageIdent>
+use retry::retry;
+
+pub const RETRIES: u64 = 5;
+pub const RETRY_WAIT: u64 = 3000;
+
+pub fn start<P1: ?Sized, P2: ?Sized>(ui: &mut UI,
+                                     url: &str,
+                                     ident_or_archive: &str,
+                                     product: &str,
+                                     version: &str,
+                                     fs_root_path: &P1,
+                                     cache_artifact_path: &P2)
+                                     -> Result<PackageIdent>
     where P1: AsRef<Path>,
-          P2: AsRef<Path>,
-          P3: AsRef<Path>
+          P2: AsRef<Path>
 {
+    if !am_i_root() {
+        try!(ui.warn("Installing a package requires root or administrator privileges. Please retry \
+                   this command as a super user or use a privilege-granting facility such as \
+                   sudo."));
+        try!(ui.br());
+        return Err(Error::RootRequired);
+    }
+
+    let cache_key_path = cache_key_path(Some(fs_root_path.as_ref()));
+    debug!("install cache_key_path: {}", cache_key_path.display());
+
     let task = try!(InstallTask::new(url,
                                      product,
                                      version,
                                      fs_root_path.as_ref(),
                                      cache_artifact_path.as_ref(),
-                                     cache_key_path.as_ref()));
+                                     &cache_key_path));
 
     if Path::new(ident_or_archive).is_file() {
         task.from_artifact(ui, &Path::new(ident_or_archive))
@@ -166,7 +181,19 @@ impl<'a> InstallTask<'a> {
             debug!("Found {} in artifact cache, skipping remote download",
                    &ident);
         } else {
-            try!(self.fetch_artifact(ui, &ident, src_path));
+            if retry(RETRIES,
+                     RETRY_WAIT,
+                     || self.fetch_artifact(ui, &ident, src_path),
+                     |res| res.is_ok())
+                .is_err() {
+                return Err(Error::from(depot_client::Error::DownloadFailed(format!("We tried {} \
+                                                                                    times but \
+                                                                                    could not \
+                                                                                    download {}. \
+                                                                                    Giving up.",
+                                                                                   RETRIES,
+                                                                                   &ident))));
+            }
         }
 
         let mut artifact = PackageArchive::new(try!(self.cached_artifact_path(&ident)));
@@ -263,6 +290,9 @@ impl<'a> InstallTask<'a> {
                                                      artifact_ident.to_string(),
                                                      ident.to_string())));
         }
+
+        let artifact_target = try!(artifact.target());
+        try!(artifact_target.validate());
 
         let nwr = try!(artifact::artifact_signer(&artifact.path));
         if let Err(_) = SigKeyPair::get_public_key_path(&nwr, self.cache_key_path) {

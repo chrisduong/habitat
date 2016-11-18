@@ -1,3 +1,5 @@
+
+
 Creating a plan starts with identifying and referencing the application code that you want to package and automate. Habitat provides several different ways to refer and include application code in your package: by downloading a tarball of the source and compiling it when building the package, by referring to a local source directory, or by using a pre-built binary and bundling it up in your package.
 
 To demonstrate Habitat code residing in the same repo as your source code, you are going to clone a simple Node.js application with a `habitat` subdirectory already created for you. Then you will modify the plan and do a test build to verify you have the basic process working correctly. By having the Habitat plan live in the same directory as your source code, the Habitat package for your application can be built right alongside your source code for testing and deployment purposes.
@@ -5,12 +7,19 @@ To demonstrate Habitat code residing in the same repo as your source code, you a
 ## Clone the project
 The Node.js application in this tutorial is a simple web app that displays a message to anyone who connects to the application. You can configure both the listening port and the message.
 
+<% if is_windows %>
+1. Change the default Git for Windows CRLF line endings setting to be LF line endings.
+
+       git config --global core.eol lf
+       git config --global core.autocrlf input
+<% end %>
+
 1. Clone the habitat-example-plans repo onto your local machine. In this example, a directory called `habitat-example-plans` will be created in the `$HOME` directory.
 
        cd ~
        git clone https://github.com/habitat-sh/habitat-example-plans
 
-2. After you have successfully cloned the repo, change directory to the `mytutorialapp` directory.
+1. After you have successfully cloned the repo, change directory to the `mytutorialapp` directory.
 
        cd ~/habitat-example-plans/mytutorialapp
 
@@ -46,7 +55,8 @@ In your terminal window, do the following:
        pkg_version=0.2.0
        pkg_maintainer="The Habitat Maintainers <humans@habitat.sh>"
        pkg_license=()
-       pkg_source=https://github.com/habitat-sh/habitat-example-plans
+       pkg_upstream_url=https://github.com/habitat-sh/habitat-example-plans
+       pkg_source=nosuchfile.tar.gz
        pkg_deps=()
        pkg_expose=()
 
@@ -54,7 +64,8 @@ Let's walk through these settings:
 
 - The `pkg_origin`, `pkg_name`, and `pkg_version` settings form the package identifier information.
 - The `pkg_maintainer` and `pkg_license` settings provide contact and license type information.
-- The `pkg_source` is a URL that specifies where to download the source from.
+- The `pkg_upstream_url` is used to provide project website metadata.
+- The `pkg_source` is a URL that specifies where to download the source from. If you are building the source locally, or do not need to download a file, you must still provide a non-empty string value.
 - The `pkg_deps` corresponds to the runtime package dependencies, and `pkg_expose` opens a network port when a Docker container is created (must be used along with the `-p` runtime option to publish it to the host machine).
 
 ## Modify the plan
@@ -66,13 +77,14 @@ We now have a skeleton plan, but we need to modify some of its settings before w
 
     > Note: A previous version of the tutorial used version `0.1.0`; however, the content related to that version no longer works with the latest version of Habitat.
 3. Because this is a tutorial, you don't have to change the `pkg_maintainer` value to your email address; however, when you upload packages for others to consume, you should include your contact information.
-4. Our Node.js application depends on the `node` and `npm` binaries at runtime, so include one of the core Habitat packages, `core/node`, as a runtime dependency. Transitive dependencies, such as `core/glibc` used by `core/node`, do not need to be listed when creating plans.
+4. Leave the `pkg_upstream_url` and `pkg_source` values as they are. The `pkg_upstream_url` is a metadata setting for your project/application -- in this case, the `habitat-example-plans` GitHub repo. The `pkg_source` setting is required, but since you will be building your package with cloned source files, you do not need to specify a valid URL. 
+5. Our Node.js application depends on the `node` and `npm` binaries at runtime, so include one of the core Habitat packages, `core/node`, as a runtime dependency. Transitive dependencies, such as `core/glibc` used by `core/node`, do not need to be listed when creating plans.
 
         pkg_deps=(core/node)
 
    > Note: Later on in this topic we are going to install the `nconf` module into our package, which requires the `npm` binary; however, we do not need to include `core/node` as a build dependency because the build script automatically installs build and runtime dependencies and adds their bin directories to the `$PATH` variable before building the package. So, if you need the same dependent binary for both build and runtime operations, you only need to include it as a runtime dependency.
 
-5. Set the `pkg_expose` value to `8080`. The `pkg_expose` setting creates an `EXPOSE` instruction in a generated Dockerfile, which we will use to create an optional Docker container; however, specifying the `pkg_expose` value does not publish this port for access by the host machine. We will do that later.
+6. Set the `pkg_expose` value to `8080`. The `pkg_expose` setting creates an `EXPOSE` instruction in a generated Dockerfile, which we will use to create an optional Docker container; however, specifying the `pkg_expose` value does not publish this port for access by the host machine. We will do that later.
 
    Add the following line to your plan:
 
@@ -143,7 +155,8 @@ pkg_name=mytutorialapp
 pkg_version=0.2.0
 pkg_maintainer="The Habitat Maintainers <humans@habitat.sh>"
 pkg_license=()
-pkg_source=https://github.com/habitat-sh/habitat-example-plans
+pkg_upstream_url=https://github.com/habitat-sh/habitat-example-plans
+pkg_source=nosuchfile.tar.gz
 pkg_deps=(core/node)
 pkg_expose=(8080)
 

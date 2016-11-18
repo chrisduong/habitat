@@ -1,5 +1,229 @@
 # Habitat CHANGELOG
 
+## [0.13.1](https://github.com/habitat-sh/habitat/tree/0.13.1) (11-14-2016)
+[Full Changelog](https://github.com/habitat-sh/habitat/compare/0.13.0...0.13.1)
+
+## Features & Enhancements
+
+- Retry network operations if they fail [\#1446](https://github.com/habitat-sh/habitat/pull/1446) ([raskchanky](https://github.com/raskchanky))
+
+## Bug fixes
+
+- hab 0.12.1 binary in docker studio 0.13.0 [\#1477](https://github.com/habitat-sh/habitat/issues/1477)
+- Running build outside studio leads to odd log filenames [\#888](https://github.com/habitat-sh/habitat/issues/888)
+
+**Merged pull requests:**
+
+- Fix broken platform support for MacOS [\#1479](https://github.com/habitat-sh/habitat/pull/1479) ([reset](https://github.com/reset))
+- Fix string to say director instead of depot [\#1478](https://github.com/habitat-sh/habitat/pull/1478) ([smith](https://github.com/smith))
+- Add post-processing infra to builder-worker [\#1476](https://github.com/habitat-sh/habitat/pull/1476) ([chefsalim](https://github.com/chefsalim))
+- Release docs [\#1475](https://github.com/habitat-sh/habitat/pull/1475) ([mwrock](https://github.com/mwrock))
+- bumping version for development [\#1474](https://github.com/habitat-sh/habitat/pull/1474) ([mwrock](https://github.com/mwrock))
+- it's 80 not 00 [\#1473](https://github.com/habitat-sh/habitat/pull/1473) ([jjasghar](https://github.com/jjasghar))
+
+## [0.13.0](https://github.com/habitat-sh/habitat/tree/0.13.0) (11-10-2016)
+[Full Changelog](https://github.com/habitat-sh/habitat/compare/0.12.1...0.13.0)
+
+## Features & Enhancements
+
+- want `hab pkg build` to do multithreaded `xz` compression when more than one core available [\#1253](https://github.com/habitat-sh/habitat/issues/1253)
+- Allow ignoring of certain file types \(e.g. \*.swp\) in config/ dir during build [\#1120](https://github.com/habitat-sh/habitat/issues/1120)
+- Emacs keybindings difficult to use inside docker-based studio [\#1102](https://github.com/habitat-sh/habitat/issues/1102)
+- \[feature request\] plan.sh generator [\#953](https://github.com/habitat-sh/habitat/issues/953)
+- Fix running builds with packaged builder worker [\#1462](https://github.com/habitat-sh/habitat/pull/1462) ([reset](https://github.com/reset))
+- Make `archive\_name` platform/architecture aware [\#1461](https://github.com/habitat-sh/habitat/pull/1461) ([smurawski](https://github.com/smurawski))
+- Add missing hyphen to do\_download example [\#1460](https://github.com/habitat-sh/habitat/pull/1460) ([ksexton](https://github.com/ksexton))
+- add target awareness to PackageArchive and PackageInstall [\#1458](https://github.com/habitat-sh/habitat/pull/1458) ([smurawski](https://github.com/smurawski))
+- Fix file extension exclusion [\#1457](https://github.com/habitat-sh/habitat/pull/1457) ([chefsalim](https://github.com/chefsalim))
+- \[devshell\] Add a non-root user, jdoe, for root/sudo checking codepaths. [\#1456](https://github.com/habitat-sh/habitat/pull/1456) ([fnichol](https://github.com/fnichol))
+- Hide image checking logic in Makefile display output. [\#1455](https://github.com/habitat-sh/habitat/pull/1455) ([fnichol](https://github.com/fnichol))
+- Hide image checking logic in Makefile display output. [\#1455](https://github.com/habitat-sh/habitat/pull/1455) ([fnichol](https://github.com/fnichol))
+- win-build can now point to any component and has switches for configuring and packaging hab [\#1451](https://github.com/habitat-sh/habitat/pull/1451) ([mwrock](https://github.com/mwrock))
+- Move process signalling to core [\#1450](https://github.com/habitat-sh/habitat/pull/1450) ([mwrock](https://github.com/mwrock))
+- Quiet the unused variable warnings in stubbed out functions [\#1449](https://github.com/habitat-sh/habitat/pull/1449) ([smurawski](https://github.com/smurawski))
+- write hooks file using ::create to be os portable [\#1448](https://github.com/habitat-sh/habitat/pull/1448) ([mwrock](https://github.com/mwrock))
+- Move user functions from sup to core [\#1447](https://github.com/habitat-sh/habitat/pull/1447) ([mwrock](https://github.com/mwrock))
+- pull the supervisor waitpid into core to be handled separately by os [\#1443](https://github.com/habitat-sh/habitat/pull/1443) ([mwrock](https://github.com/mwrock))
+- Create the `hab plan init` command. [\#1416](https://github.com/habitat-sh/habitat/pull/1416) ([Hoverbear](https://github.com/Hoverbear))
+- Added a new DEBUGGING run section  [\#1398](https://github.com/habitat-sh/habitat/pull/1398) ([jjasghar](https://github.com/jjasghar))
+- Implement ability to exclude config files through the HAB\_CONFIG\_EXCLUDE variable [\#1389](https://github.com/habitat-sh/habitat/pull/1389) ([efyang](https://github.com/efyang))
+- Set logfile name based on pkg\_name [\#1384](https://github.com/habitat-sh/habitat/pull/1384) ([smacfarlane](https://github.com/smacfarlane))
+
+## Bug fixes
+
+- studio terminal bug in 0.12.0 [\#1435](https://github.com/habitat-sh/habitat/issues/1435)
+- Origins do not display until logging back in [\#1161](https://github.com/habitat-sh/habitat/issues/1161)
+- \[hab/mac\] Fix mac-build.sh for new install.sh logic. [\#1454](https://github.com/habitat-sh/habitat/pull/1454) ([fnichol](https://github.com/fnichol))
+
+**Closed issues:**
+
+- 'make' failing to finish on \(minimally\) OSX [\#1411](https://github.com/habitat-sh/habitat/issues/1411)
+
+**Merged pull requests:**
+
+- Add segment snippet to website and web app [\#1466](https://github.com/habitat-sh/habitat/pull/1466) ([ryankeairns](https://github.com/ryankeairns))
+- Fix unhandled case in build logfile name detection [\#1464](https://github.com/habitat-sh/habitat/pull/1464) ([smacfarlane](https://github.com/smacfarlane))
+- Add core/curl as runtime dep for builder-worker [\#1452](https://github.com/habitat-sh/habitat/pull/1452) ([reset](https://github.com/reset))
+- Worker building plans from GitHub source [\#1437](https://github.com/habitat-sh/habitat/pull/1437) ([reset](https://github.com/reset))
+
+## [0.12.1](https://github.com/habitat-sh/habitat/tree/0.12.1) (11-02-2016)
+[Full Changelog](https://github.com/habitat-sh/habitat/compare/0.12.0...0.12.1)
+
+## Features & Enhancements
+
+- Add docs update for run hook [\#1431](https://github.com/habitat-sh/habitat/pull/1431) ([chefsalim](https://github.com/chefsalim))
+- Readme Refactor [\#1429](https://github.com/habitat-sh/habitat/pull/1429) ([eeyun](https://github.com/eeyun))
+- Module path refactor [\#1428](https://github.com/habitat-sh/habitat/pull/1428) ([adamhjk](https://github.com/adamhjk))
+- Adding service files [\#1427](https://github.com/habitat-sh/habitat/pull/1427) ([adamhjk](https://github.com/adamhjk))
+- Clean some unwraps [\#1415](https://github.com/habitat-sh/habitat/pull/1415) ([Hoverbear](https://github.com/Hoverbear))
+- Adding the Service and Election Rumors [\#1402](https://github.com/habitat-sh/habitat/pull/1402) ([adamhjk](https://github.com/adamhjk))
+
+## Bug fixes
+
+- Command 'hab pkg search billmeyer' finds data but panics anyway. [\#1434](https://github.com/habitat-sh/habitat/issues/1434)
+- Unexpected behavior when applying config - not restarting, maintaining last config on restart [\#1340](https://github.com/habitat-sh/habitat/issues/1340)
+- \[plan-build\] Ensure that `TERMINFO` is not present for all builds. [\#1440](https://github.com/habitat-sh/habitat/pull/1440) ([fnichol](https://github.com/fnichol))
+- Fix hab pkg search payload [\#1439](https://github.com/habitat-sh/habitat/pull/1439) ([chefsalim](https://github.com/chefsalim))
+- Filter on the correct package params [\#1436](https://github.com/habitat-sh/habitat/pull/1436) ([raskchanky](https://github.com/raskchanky))
+- Fix issue with package display [\#1433](https://github.com/habitat-sh/habitat/pull/1433) ([raskchanky](https://github.com/raskchanky))
+- \[tutorial\] using `npm start` results in multiple child processes upon reconfigure [\#1394](https://github.com/habitat-sh/habitat/pull/1394) ([metadave](https://github.com/metadave))
+
+**Merged pull requests:**
+
+- Fix election test [\#1430](https://github.com/habitat-sh/habitat/pull/1430) ([adamhjk](https://github.com/adamhjk))
+- Adds test for ring encryption [\#1422](https://github.com/habitat-sh/habitat/pull/1422) ([adamhjk](https://github.com/adamhjk))
+- add AWS ECS documentation [\#1417](https://github.com/habitat-sh/habitat/pull/1417) ([mattray](https://github.com/mattray))
+- Adds service configuration rumor and encryption [\#1414](https://github.com/habitat-sh/habitat/pull/1414) ([adamhjk](https://github.com/adamhjk))
+- Renamed  to DOCKER\_OPS to DOCKER\_OPTS [\#1413](https://github.com/habitat-sh/habitat/pull/1413) ([eeyun](https://github.com/eeyun))
+- Fix errant formatting in config update docs [\#1399](https://github.com/habitat-sh/habitat/pull/1399) ([twm](https://github.com/twm))
+- Allow sourcing of /src/.studiorc to set hab env vars [\#1390](https://github.com/habitat-sh/habitat/pull/1390) ([bdangit](https://github.com/bdangit))
+- \[builder\] deprecate Content-Range header usage [\#1387](https://github.com/habitat-sh/habitat/pull/1387) ([chefsalim](https://github.com/chefsalim))
+
+## [0.12.0](https://github.com/habitat-sh/habitat/tree/0.12.0) (10-28-2016)
+[Full Changelog](https://github.com/habitat-sh/habitat/compare/0.11.0...0.12.0)
+
+## Features & Enhancements
+
+- Docs: Link to missing wikipedia page [\#1352](https://github.com/habitat-sh/habitat/issues/1352)
+- Docs: Link to missing wikipedia page [\#1352](https://github.com/habitat-sh/habitat/issues/1352)
+- habitat shouldn't require sudo [\#903](https://github.com/habitat-sh/habitat/issues/903)
+- Now that swim is butterfly, fix the Makefile to reflect that [\#1391](https://github.com/habitat-sh/habitat/pull/1391) ([smurawski](https://github.com/smurawski))
+- add a `hab pkg header` command to read the hart file header [\#1388](https://github.com/habitat-sh/habitat/pull/1388) ([smurawski](https://github.com/smurawski))
+- \[core\] Fix hyper test compilation churn. [\#1383](https://github.com/habitat-sh/habitat/pull/1383) ([fnichol](https://github.com/fnichol))
+- Added myself as a maintainer [\#1378](https://github.com/habitat-sh/habitat/pull/1378) ([eeyun](https://github.com/eeyun))
+- Fix broken Wikipedia link [\#1375](https://github.com/habitat-sh/habitat/pull/1375) ([juliandunn](https://github.com/juliandunn))
+- Minor Admin API doc corrections [\#1373](https://github.com/habitat-sh/habitat/pull/1373) ([reset](https://github.com/reset))
+- Display private key names on the origin page. [\#1371](https://github.com/habitat-sh/habitat/pull/1371) ([raskchanky](https://github.com/raskchanky))
+- Appveyor building `hab` and testing ported crates [\#1370](https://github.com/habitat-sh/habitat/pull/1370) ([smurawski](https://github.com/smurawski))
+- improve docs documentation and add run task to Makefile [\#1369](https://github.com/habitat-sh/habitat/pull/1369) ([reset](https://github.com/reset))
+- improve docs documentation and add run task to Makefile [\#1369](https://github.com/habitat-sh/habitat/pull/1369) ([reset](https://github.com/reset))
+- Add Linux only comment to -R flag in docs [\#1367](https://github.com/habitat-sh/habitat/pull/1367) ([reset](https://github.com/reset))
+- Add Linux only comment to -R flag in docs [\#1367](https://github.com/habitat-sh/habitat/pull/1367) ([reset](https://github.com/reset))
+- Move a manual build step to Makefile from README for www project [\#1366](https://github.com/habitat-sh/habitat/pull/1366) ([reset](https://github.com/reset))
+- remove pkg-config hack from worker plan [\#1365](https://github.com/habitat-sh/habitat/pull/1365) ([reset](https://github.com/reset))
+- Updating code snippets to remove sudo inline with hab 0.11 release [\#1362](https://github.com/habitat-sh/habitat/pull/1362) ([davidwrede](https://github.com/davidwrede))
+- Update www docs with a few clarifications. [\#1359](https://github.com/habitat-sh/habitat/pull/1359) ([raskchanky](https://github.com/raskchanky))
+- Rough draft of new Windows tutorial [\#1350](https://github.com/habitat-sh/habitat/pull/1350) ([davidwrede](https://github.com/davidwrede))
+
+## Bug fixes
+
+- No feedback when downloading hab studio [\#1361](https://github.com/habitat-sh/habitat/issues/1361)
+- Docs: Link to missing wikipedia page [\#1352](https://github.com/habitat-sh/habitat/issues/1352)
+- Habitat Studio doesn't work on paths with space inside [\#1338](https://github.com/habitat-sh/habitat/issues/1338)
+- -R option is either mis documented, or not implemented [\#876](https://github.com/habitat-sh/habitat/issues/876)
+- Quoted $studio\_config variable \#1338 [\#1376](https://github.com/habitat-sh/habitat/pull/1376) ([Albibek](https://github.com/Albibek))
+- \[common\] use root cache key path for package install [\#1372](https://github.com/habitat-sh/habitat/pull/1372) ([chefsalim](https://github.com/chefsalim))
+
+**Closed issues:**
+
+- `hab config apply` does not work as expected [\#1355](https://github.com/habitat-sh/habitat/issues/1355)
+- hab 0.10.2 doesn't copy keys inside the studio [\#1341](https://github.com/habitat-sh/habitat/issues/1341)
+- \[discussion\] Should template files have an extension? [\#1183](https://github.com/habitat-sh/habitat/issues/1183)
+
+**Merged pull requests:**
+
+- Enable `HAB\_DOCKER\_OPS` environment variable. [\#1410](https://github.com/habitat-sh/habitat/pull/1410) ([Hoverbear](https://github.com/Hoverbear))
+- Improve timeout reporting [\#1401](https://github.com/habitat-sh/habitat/pull/1401) ([reset](https://github.com/reset))
+- Hide habitat summit banner [\#1400](https://github.com/habitat-sh/habitat/pull/1400) ([ryankeairns](https://github.com/ryankeairns))
+- Updated Mac instructions for building Hab [\#1396](https://github.com/habitat-sh/habitat/pull/1396) ([jjasghar](https://github.com/jjasghar))
+- Make `fix\_interpreter` resolve symbolic links [\#1386](https://github.com/habitat-sh/habitat/pull/1386) ([smith](https://github.com/smith))
+- Reload the origin after private key upload so it shows up right away [\#1385](https://github.com/habitat-sh/habitat/pull/1385) ([raskchanky](https://github.com/raskchanky))
+- Document `download\_file` function [\#1382](https://github.com/habitat-sh/habitat/pull/1382) ([smith](https://github.com/smith))
+- Change how we check origin membership to make the Members tab show up [\#1380](https://github.com/habitat-sh/habitat/pull/1380) ([raskchanky](https://github.com/raskchanky))
+- Fix some bugs with linking packages to repos [\#1379](https://github.com/habitat-sh/habitat/pull/1379) ([raskchanky](https://github.com/raskchanky))
+- Add Gossip to Swim, creating a Butterfly [\#1377](https://github.com/habitat-sh/habitat/pull/1377) ([adamhjk](https://github.com/adamhjk))
+- Improve user output - show Docker pull progress on studio enter [\#1374](https://github.com/habitat-sh/habitat/pull/1374) ([chefsalim](https://github.com/chefsalim))
+- \[JEX-346\] Unify the Linux and MacOS install scripts [\#1364](https://github.com/habitat-sh/habitat/pull/1364) ([jtimberman](https://github.com/jtimberman))
+- fix windows binary building on linux/vbox [\#1358](https://github.com/habitat-sh/habitat/pull/1358) ([mwrock](https://github.com/mwrock))
+- Fix lots of bugs from the Angular 2 upgrade [\#1330](https://github.com/habitat-sh/habitat/pull/1330) ([raskchanky](https://github.com/raskchanky))
+
+## [0.11.0](https://github.com/habitat-sh/habitat/tree/0.11.0) (10-14-2016)
+[Full Changelog](https://github.com/habitat-sh/habitat/compare/0.10.2...0.11.0)
+
+## Features & Enhancements
+
+- Port Hab command-line tool to Windows [\#1192](https://github.com/habitat-sh/habitat/issues/1192)
+- Warn when docker-based studio is out of date [\#1167](https://github.com/habitat-sh/habitat/issues/1167)
+- Version ordering seems to be alpha sorted and needs to following some kind of versioning comparison scheme [\#1090](https://github.com/habitat-sh/habitat/issues/1090)
+- Package names with a dot generate invalid default group [\#1089](https://github.com/habitat-sh/habitat/issues/1089)
+- Check write permissions before attempting to download [\#960](https://github.com/habitat-sh/habitat/issues/960)
+- Sodiumoxide cargo config override can be removed [\#952](https://github.com/habitat-sh/habitat/issues/952)
+- be able to modify and rebuild from plan.sh without rerunning a full build. [\#927](https://github.com/habitat-sh/habitat/issues/927)
+- \[builder-web\] Upgrade to new Angular 2 Router [\#885](https://github.com/habitat-sh/habitat/issues/885)
+- \[builder-web\] Upgrade to Angular 2 RC [\#884](https://github.com/habitat-sh/habitat/issues/884)
+- Really fix the admin status check on Windows this time [\#1342](https://github.com/habitat-sh/habitat/pull/1342) ([smurawski](https://github.com/smurawski))
+- Make Admin/Elevated Admin Token == root for hab commands [\#1337](https://github.com/habitat-sh/habitat/pull/1337) ([smurawski](https://github.com/smurawski))
+- \[ci\] Support `$STEAM\_ROLLER` to force a build unconditionally. [\#1335](https://github.com/habitat-sh/habitat/pull/1335) ([fnichol](https://github.com/fnichol))
+- \[ci\] Remove unused and redundant cache directories. [\#1334](https://github.com/habitat-sh/habitat/pull/1334) ([fnichol](https://github.com/fnichol))
+- \[ci\] Drop requirement for nightly cargo installation. [\#1333](https://github.com/habitat-sh/habitat/pull/1333) ([fnichol](https://github.com/fnichol))
+- \[ci\] Properly detect version of rustfmt for install logic. [\#1332](https://github.com/habitat-sh/habitat/pull/1332) ([fnichol](https://github.com/fnichol))
+- \[hab\] Attempt to call `sudo` on `hab studio \*` for non-root users. [\#1329](https://github.com/habitat-sh/habitat/pull/1329) ([fnichol](https://github.com/fnichol))
+- Remove vendored sodiumoxide and libsodium-sys from components [\#1326](https://github.com/habitat-sh/habitat/pull/1326) ([reset](https://github.com/reset))
+- Detect, warn, & exit on operations that require root/admin permissions. [\#1325](https://github.com/habitat-sh/habitat/pull/1325) ([fnichol](https://github.com/fnichol))
+- Set sensible defaults for pkg\_pconfig\_dirs plan variable [\#1323](https://github.com/habitat-sh/habitat/pull/1323) ([reset](https://github.com/reset))
+- Improve error messages around Docker [\#1322](https://github.com/habitat-sh/habitat/pull/1322) ([raskchanky](https://github.com/raskchanky))
+- \[hab\] Refactor constants to remove unused warns in studio subcmd. [\#1321](https://github.com/habitat-sh/habitat/pull/1321) ([fnichol](https://github.com/fnichol))
+- \[hab\] Retire `core/hab-dynamic` Plan. [\#1320](https://github.com/habitat-sh/habitat/pull/1320) ([fnichol](https://github.com/fnichol))
+- Updating tutorial content and example code [\#1319](https://github.com/habitat-sh/habitat/pull/1319) ([davidwrede](https://github.com/davidwrede))
+- Add terminfo to studio for colorization [\#1318](https://github.com/habitat-sh/habitat/pull/1318) ([smacfarlane](https://github.com/smacfarlane))
+- Streamline Bintray release instructions in RELEASE.md. [\#1316](https://github.com/habitat-sh/habitat/pull/1316) ([fnichol](https://github.com/fnichol))
+- Streamline Bintray release instructions in RELEASE.md. [\#1316](https://github.com/habitat-sh/habitat/pull/1316) ([fnichol](https://github.com/fnichol))
+- `hab studio enter` on Windows via Docker! [\#1309](https://github.com/habitat-sh/habitat/pull/1309) ([smurawski](https://github.com/smurawski))
+- Remove unconditional reference to sudo\(8\). [\#1304](https://github.com/habitat-sh/habitat/pull/1304) ([juliandunn](https://github.com/juliandunn))
+- Update to latest ZeroMQ crate [\#1252](https://github.com/habitat-sh/habitat/pull/1252) ([reset](https://github.com/reset))
+
+## Bug fixes
+
+- "Invalid status provided" on Habitat 0.10.1 because it tries to send data to Google [\#1306](https://github.com/habitat-sh/habitat/issues/1306)
+- hab pkg build returns code 0 on error [\#1285](https://github.com/habitat-sh/habitat/issues/1285)
+- Generated svc `run` script assumes binaries are on path [\#1268](https://github.com/habitat-sh/habitat/issues/1268)
+- Check filetype of static/run in svc directory before writing to [\#1267](https://github.com/habitat-sh/habitat/issues/1267)
+- Overriding nested \(table\) config vars clobbers defaults [\#1184](https://github.com/habitat-sh/habitat/issues/1184)
+- hab pkg upload fails if public key isn't present in /hab/cache/keys [\#1172](https://github.com/habitat-sh/habitat/issues/1172)
+- Version ordering seems to be alpha sorted and needs to following some kind of versioning comparison scheme [\#1090](https://github.com/habitat-sh/habitat/issues/1090)
+- Package names with a dot generate invalid default group [\#1089](https://github.com/habitat-sh/habitat/issues/1089)
+- Don't restart child process if reconfigure hook is defined [\#1336](https://github.com/habitat-sh/habitat/pull/1336) ([metadave](https://github.com/metadave))
+- \[studio\] Properly propagate the exit code when `build` fails. [\#1331](https://github.com/habitat-sh/habitat/pull/1331) ([fnichol](https://github.com/fnichol))
+- replacing execv in exec.rs with std::process::Command [\#1324](https://github.com/habitat-sh/habitat/pull/1324) ([rrxtns](https://github.com/rrxtns))
+
+**Closed issues:**
+
+- Depot fails to link package to GitHub repo due to CORS issue [\#1344](https://github.com/habitat-sh/habitat/issues/1344)
+- Unauthorized when uploading keys/packages to depot [\#1343](https://github.com/habitat-sh/habitat/issues/1343)
+- Keys not loaded properly when installing .hart locally [\#1317](https://github.com/habitat-sh/habitat/issues/1317)
+
+**Merged pull requests:**
+
+- End to end cleanup of windows binary building [\#1357](https://github.com/habitat-sh/habitat/pull/1357) ([mwrock](https://github.com/mwrock))
+- revert windows download button until bintray publish is fleshed out [\#1354](https://github.com/habitat-sh/habitat/pull/1354) ([mwrock](https://github.com/mwrock))
+- 0.11.0 [\#1353](https://github.com/habitat-sh/habitat/pull/1353) ([reset](https://github.com/reset))
+- Add windows binaries to available downloads [\#1348](https://github.com/habitat-sh/habitat/pull/1348) ([mwrock](https://github.com/mwrock))
+- \[core\] Check invalid characters in package name on upload [\#1347](https://github.com/habitat-sh/habitat/pull/1347) ([chefsalim](https://github.com/chefsalim))
+- \[build\] Validate characters in plan name [\#1345](https://github.com/habitat-sh/habitat/pull/1345) ([chefsalim](https://github.com/chefsalim))
+- Fix build step in builder-worker plan [\#1328](https://github.com/habitat-sh/habitat/pull/1328) ([reset](https://github.com/reset))
+- Bump VERSION to 0.11.0-dev. [\#1315](https://github.com/habitat-sh/habitat/pull/1315) ([fnichol](https://github.com/fnichol))
+- SWIM as an independent library [\#1310](https://github.com/habitat-sh/habitat/pull/1310) ([adamhjk](https://github.com/adamhjk))
+
 ## [0.10.2](https://github.com/habitat-sh/habitat/tree/0.10.2) (09-30-2016)
 [Full Changelog](https://github.com/habitat-sh/habitat/compare/0.10.1...0.10.2)
 
@@ -42,6 +266,7 @@
 - \[plans\] Curl plan should support/find CA certificates out of the box [\#718](https://github.com/habitat-sh/habitat/issues/718)
 - Add all deps to the chocolatey package of hab dev build for Windows [\#1295](https://github.com/habitat-sh/habitat/pull/1295) ([smurawski](https://github.com/smurawski))
 - Support windows command resolution [\#1290](https://github.com/habitat-sh/habitat/pull/1290) ([smurawski](https://github.com/smurawski))
+- Remove the Waffle badge as we aren't currently using it. [\#1288](https://github.com/habitat-sh/habitat/pull/1288) ([juliandunn](https://github.com/juliandunn))
 - Add step to BUILDING for sourcing cargo env to fix make error [\#1286](https://github.com/habitat-sh/habitat/pull/1286) ([robbkidd](https://github.com/robbkidd))
 - Adding a nuspec template for  [\#1283](https://github.com/habitat-sh/habitat/pull/1283) ([smurawski](https://github.com/smurawski))
 - Adding a build script for the Windows `hab` binary and AppVeyor Integration [\#1279](https://github.com/habitat-sh/habitat/pull/1279) ([smurawski](https://github.com/smurawski))
@@ -62,7 +287,6 @@
 
 **Closed issues:**
 
-- want `hab pkg build` to do multithreaded `xz` compression when more than one core available [\#1253](https://github.com/habitat-sh/habitat/issues/1253)
 - Unclear message when token has incorrect scope [\#1105](https://github.com/habitat-sh/habitat/issues/1105)
 
 **Merged pull requests:**
@@ -73,7 +297,6 @@
 - Require less broad OAuth scopes [\#1293](https://github.com/habitat-sh/habitat/pull/1293) ([reset](https://github.com/reset))
 - \[WIP\] Ensure the hab versions inside and outside of a studio match [\#1292](https://github.com/habitat-sh/habitat/pull/1292) ([raskchanky](https://github.com/raskchanky))
 - Request full user scope on web login [\#1289](https://github.com/habitat-sh/habitat/pull/1289) ([reset](https://github.com/reset))
-- Remove the Waffle badge as we aren't currently using it. [\#1288](https://github.com/habitat-sh/habitat/pull/1288) ([juliandunn](https://github.com/juliandunn))
 - Bldr-0.11.0-dev [\#1284](https://github.com/habitat-sh/habitat/pull/1284) ([reset](https://github.com/reset))
 - Improve messaging for failed login due to missing OAuth scope\(s\) [\#1282](https://github.com/habitat-sh/habitat/pull/1282) ([reset](https://github.com/reset))
 - Update to Windows Build Docs [\#1281](https://github.com/habitat-sh/habitat/pull/1281) ([smurawski](https://github.com/smurawski))
@@ -244,6 +467,7 @@
 - cfg variables don't expand inside Handlebars each block helper [\#1083](https://github.com/habitat-sh/habitat/issues/1083)
 - build errors on blake2bsums for files with spaces in them [\#1065](https://github.com/habitat-sh/habitat/issues/1065)
 - Wildcard fix\_interpreter throws error if the path contains directories [\#1045](https://github.com/habitat-sh/habitat/issues/1045)
+- Be able to specify that a service wants a SIGHUP for reconfigure [\#987](https://github.com/habitat-sh/habitat/issues/987)
 - studio plan is dependent on removed package - hab-static [\#974](https://github.com/habitat-sh/habitat/issues/974)
 - Rename remaining references of "view" to "channel" [\#1153](https://github.com/habitat-sh/habitat/pull/1153) ([reset](https://github.com/reset))
 - \[hab,hab-sup\] Fix progress bar/newline rendering issue. [\#1125](https://github.com/habitat-sh/habitat/pull/1125) ([fnichol](https://github.com/fnichol))
