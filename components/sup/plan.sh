@@ -7,9 +7,9 @@ pkg_license=('Apache-2.0')
 pkg_source=nosuchfile.tar.gz
 pkg_deps=(
   core/busybox-static
-  core/glibc core/gcc-libs core/libarchive core/libsodium core/openssl
+  core/glibc core/gcc-libs core/libarchive core/libsodium core/openssl core/zeromq
 )
-pkg_build_deps=(core/coreutils core/cacerts core/rust core/gcc)
+pkg_build_deps=(core/coreutils core/cacerts core/rust core/gcc core/protobuf)
 pkg_bin_dirs=(bin)
 
 bin=$_pkg_distname
@@ -41,9 +41,12 @@ do_prepare() {
   export OPENSSL_LIB_DIR=$(pkg_path_for openssl)/lib
   export OPENSSL_INCLUDE_DIR=$(pkg_path_for openssl)/include
   export SODIUM_LIB_DIR=$(pkg_path_for libsodium)/lib
+  export LIBZMQ_PREFIX=$(pkg_path_for zeromq)
+  export PROTOBUF_PREFIX=$(pkg_path_for protobuf)
 }
 
 do_build() {
+  export LIBRARY_PATH=$LIBZMQ_PREFIX/lib
   pushd $PLAN_CONTEXT > /dev/null
   cargo build ${build_type#--debug} --target=$rustc_target --verbose
   popd > /dev/null

@@ -20,15 +20,18 @@
 //!
 //! See the [Config](struct.Config.html) struct for the specific options available.
 
+use std::io;
+use std::mem;
+use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs, SocketAddr, SocketAddrV4};
+use std::ops::{Deref, DerefMut};
+use std::option;
 use std::str::FromStr;
 use std::sync::{Once, ONCE_INIT};
-use std::mem;
 
 use hcore::package::PackageIdent;
 
-use error::{Error, SupError};
-use gossip::server::GOSSIP_DEFAULT_PORT;
-use topology::Topology;
+use error::{Error, Result, SupError};
+use http_gateway;
 
 static LOGKEY: &'static str = "CFG";
 
@@ -67,7 +70,58 @@ pub enum Command {
     ShellSh,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
+pub struct GossipListenAddr(SocketAddr);
+
+impl Default for GossipListenAddr {
+    fn default() -> GossipListenAddr {
+        GossipListenAddr(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 9638)))
+    }
+}
+
+impl Deref for GossipListenAddr {
+    type Target = SocketAddr;
+
+    fn deref(&self) -> &SocketAddr {
+        &self.0
+    }
+}
+
+impl DerefMut for GossipListenAddr {
+    fn deref_mut(&mut self) -> &mut SocketAddr {
+        &mut self.0
+    }
+}
+
+impl FromStr for GossipListenAddr {
+    type Err = SupError;
+
+    fn from_str(val: &str) -> Result<Self> {
+        match SocketAddr::from_str(val) {
+            Ok(addr) => Ok(GossipListenAddr(addr)),
+            Err(_) => {
+                match IpAddr::from_str(val) {
+                    Ok(ip) => {
+                        let mut addr = GossipListenAddr::default();
+                        addr.set_ip(ip);
+                        Ok(addr)
+                    }
+                    Err(_) => Err(sup_error!(Error::IPFailed)),
+                }
+            }
+        }
+    }
+}
+
+impl ToSocketAddrs for GossipListenAddr {
+    type Iter = option::IntoIter<SocketAddr>;
+
+    fn to_socket_addrs(&self) -> io::Result<Self::Iter> {
+        self.0.to_socket_addrs()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, RustcEncodable)]
 pub enum UpdateStrategy {
     None,
     AtOnce,
@@ -88,9 +142,22 @@ impl Default for UpdateStrategy {
     }
 }
 
+#[derive(PartialEq, Eq, Debug, RustcEncodable, Clone, Copy)]
+pub enum Topology {
+    Standalone,
+    Leader,
+    Initializer,
+}
+
+impl Default for Topology {
+    fn default() -> Topology {
+        Topology::Standalone
+    }
+}
+
 impl FromStr for Command {
     type Err = SupError;
-    fn from_str(s: &str) -> Result<Command, SupError> {
+    fn from_str(s: &str) -> Result<Command> {
         match s {
             "config" => Ok(Command::Config),
             "bash" => Ok(Command::ShellBash),
@@ -111,6 +178,8 @@ impl Default for Command {
 /// Holds our configuration options.
 #[derive(Default, Debug, PartialEq, Eq)]
 pub struct Config {
+    pub http_listen_addr: http_gateway::ListenAddr,
+    pub gossip_listen: GossipListenAddr,
     command: Command,
     package: PackageIdent,
     local_artifact: Option<String>,
@@ -123,10 +192,6 @@ pub struct Config {
     key: String,
     email: Option<String>,
     expire_days: Option<u16>,
-    gossip_listen_ip: String,
-    gossip_listen_port: u16,
-    http_listen_ip: String,
-    http_listen_port: u16,
     userkey: Option<String>,
     servicekey: Option<String>,
     infile: Option<String>,
@@ -322,39 +387,26 @@ impl Config {
         &self.topology
     }
 
-    pub fn gossip_listen_ip(&self) -> &str {
-        &self.gossip_listen_ip
+    pub fn gossip_listen(&self) -> &GossipListenAddr {
+        &self.gossip_listen
     }
 
-    pub fn set_gossip_listen_ip(&mut self, ip: String) -> &mut Config {
-        self.gossip_listen_ip = ip;
+    pub fn set_gossip_listen(&mut self, gossip_listen: GossipListenAddr) -> &mut Config {
+        self.gossip_listen = gossip_listen;
         self
     }
 
-    pub fn gossip_listen_port(&self) -> u16 {
-        self.gossip_listen_port
+    pub fn http_listen_addr(&self) -> &SocketAddr {
+        &self.http_listen_addr
     }
 
-    pub fn set_gossip_listen_port(&mut self, port: u16) -> &mut Config {
-        self.gossip_listen_port = port;
+    pub fn set_http_listen_ip(&mut self, ip: IpAddr) -> &mut Config {
+        self.http_listen_addr.set_ip(ip);
         self
-    }
-
-    pub fn http_listen_ip(&self) -> &str {
-        &self.http_listen_ip
-    }
-
-    pub fn set_http_listen_ip(&mut self, ip: String) -> &mut Config {
-        self.http_listen_ip = ip;
-        self
-    }
-
-    pub fn http_listen_port(&self) -> u16 {
-        self.http_listen_port
     }
 
     pub fn set_http_listen_port(&mut self, port: u16) -> &mut Config {
-        self.http_listen_port = port;
+        self.http_listen_addr.set_port(port);
         self
     }
 
@@ -407,7 +459,7 @@ impl Config {
     pub fn set_gossip_peer(&mut self, mut gp: Vec<String>) -> &mut Config {
         for p in gp.iter_mut() {
             if p.find(':').is_none() {
-                p.push_str(&format!(":{}", GOSSIP_DEFAULT_PORT));
+                p.push_str(&format!(":{}", 9638));
             }
         }
         self.gossip_peer = gp;
@@ -455,8 +507,7 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, Command};
-    use topology::Topology;
+    use super::{Config, Command, Topology};
 
     #[test]
     fn new() {

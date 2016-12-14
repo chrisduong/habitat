@@ -7,7 +7,7 @@ build = "build.rs"
 workspace = "../../"
 
 [[bin]]
-name = "hab-depot"
+name = "bldr-depot"
 doc = false
 
 [dependencies]
@@ -20,7 +20,7 @@ lazy_static = "*"
 libarchive = "*"
 log = "*"
 mount = "*"
-openssl = "*"
+openssl = "0.7" # lock until hyper bumps to 0.8+
 persistent = "*"
 protobuf = "*"
 r2d2 = "*"
@@ -64,7 +64,8 @@ git = "https://github.com/habitat-sh/urlencoded.git"
 branch = "habitat"
 
 [dependencies.zmq]
-git = "https://github.com/erickt/rust-zmq.git"
+git = "https://github.com/habitat-sh/rust-zmq.git"
+tag = "windows_fix_pr"
 
 [build-dependencies]
 serde_codegen = "*"

@@ -47,6 +47,7 @@ pub fn get() -> App<'static, 'static> {
             (aliases: &["cl"])
             (@setting ArgRequiredElseHelp)
             (subcommand: sub_cli_setup().aliases(&["s", "se", "set", "setu"]))
+            (subcommand: sub_cli_completers().aliases(&["c", "co", "com", "comp"]))
         )
         (@subcommand config =>
             (about: "Commands relating to Habitat runtime config")
@@ -70,7 +71,7 @@ pub fn get() -> App<'static, 'static> {
                 (@arg USER: +takes_value "Name of the user key")
                 (@arg PEER: -p --peer +takes_value
                     "A comma-delimited list of one or more Habitat Supervisor peers to infect \
-                    (default: 127.0.0.1:9634)")
+                    (default: 127.0.0.1:9638)")
                 (@arg RING: -r --ring +takes_value
                     "Ring key name, which will encrypt communication messages")
             )
@@ -322,12 +323,32 @@ fn sub_cli_setup() -> App<'static, 'static> {
     )
 }
 
+fn sub_cli_completers() -> App<'static, 'static> {
+    let sub = clap_app!(@subcommand completers =>
+        (about: "Creates command-line completers for your shell."));
+
+    let supported_shells = ["bash", "fish", "zsh", "powershell"];
+
+    // The clap_app! macro above is great but does not support the ability to specify a range of
+    // possible values. We wanted to fail here with an unsupported shell instead of pushing off a
+    // bad value to clap.
+
+    sub.arg(Arg::with_name("SHELL")
+        .help("The name of the shell you want to generate the command-completion. \
+                      Supported Shells: bash, fish, zsh, powershell")
+        .short("s")
+        .long("shell")
+        .required(true)
+        .takes_value(true)
+        .possible_values(&supported_shells))
+}
+
 fn sub_config_apply() -> App<'static, 'static> {
     clap_app!(@subcommand apply =>
         (about: "Applies a configuration to a group of Habitat Supervisors")
         (@arg PEER: -p --peer +takes_value
             "A comma-delimited list of one or more Habitat Supervisor peers to infect \
-            (default: 127.0.0.1:9634)")
+            (default: 127.0.0.1:9638)")
         (@arg RING: -r --ring +takes_value
             "Ring key name, which will encrypt communication messages")
         (@arg SERVICE_GROUP: +required {valid_service_group}
@@ -367,13 +388,18 @@ fn sub_pkg_build() -> App<'static, 'static> {
 }
 
 fn sub_pkg_install() -> App<'static, 'static> {
-    clap_app!(@subcommand install =>
+    let sub = clap_app!(@subcommand install =>
         (about: "Installs a Habitat package from a Depot or locally from a Habitat Artifact")
         (@arg DEPOT_URL: -u --url +takes_value {valid_url} "Use a specific Depot URL (ex: http://depot.example.com/v1/depot)")
         (@arg PKG_IDENT_OR_ARTIFACT: +required +multiple
             "One or more Habitat package identifiers (ex: acme/redis) and/or filepaths \
             to a Habitat Artifact (ex: /home/acme-redis-3.0.7-21120102031201-x86_64-linux.hart)")
-    )
+    );
+    sub.arg(Arg::with_name("IGNORE_TARGET")
+        .help("Skips target validation for package installation.")
+        .short("i")
+        .long("ignore-target")
+        .hidden(true))
 }
 
 fn file_exists(val: String) -> result::Result<(), String> {

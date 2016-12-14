@@ -23,17 +23,21 @@ use std::fs::{self, File};
 use std::io::BufReader;
 use std::io::prelude::*;
 use std::path::PathBuf;
-use std::process::{Command, Stdio, Child};
+use std::process::Child;
+use std::result;
 use std::thread;
 
 use hcore;
-use hcore::os::{process, users};
+use hcore::os::process;
 use hcore::package::PackageIdent;
+use hcore::service::ServiceGroup;
 use libc::c_int;
+use rustc_serialize::{Encodable, Encoder};
 use time::{Duration, SteadyTime};
 
 use error::{Result, Error};
-use util::signals;
+use util;
+use manager::signals;
 
 const PIDFILE_NAME: &'static str = "PID";
 static LOGKEY: &'static str = "SV";
@@ -94,7 +98,7 @@ pub fn WTERMSIG(status: c_int) -> c_int {
 
 pub type Pid = u32;
 
-#[derive(Debug)]
+#[derive(Debug, RustcEncodable)]
 pub enum ProcessState {
     Down,
     Up,
@@ -119,7 +123,7 @@ impl fmt::Display for ProcessState {
 /// These params are outside the scope of what is in
 /// Supervisor.package_ident, and aren't runtime params that are stored
 /// in the top-level Supervisor struct (such as PID etc)
-#[derive(Debug)]
+#[derive(Debug, RustcEncodable)]
 pub struct RuntimeConfig {
     pub svc_user: String,
     pub svc_group: String,
@@ -134,11 +138,11 @@ impl RuntimeConfig {
     }
 }
 
-
 #[derive(Debug)]
 pub struct Supervisor {
     pub pid: Option<Pid>,
     pub package_ident: PackageIdent,
+    pub preamble: String,
     pub state: ProcessState,
     pub state_entered: SteadyTime,
     pub has_started: bool,
@@ -146,10 +150,14 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    pub fn new(package_ident: PackageIdent, runtime_config: RuntimeConfig) -> Supervisor {
+    pub fn new(package_ident: PackageIdent,
+               service_group: ServiceGroup,
+               runtime_config: RuntimeConfig)
+               -> Supervisor {
         Supervisor {
             pid: None,
             package_ident: package_ident,
+            preamble: format!("{}", service_group),
             state: ProcessState::Down,
             state_entered: SteadyTime::now(),
             has_started: false,
@@ -164,7 +172,7 @@ impl Supervisor {
 
     pub fn status(&self) -> (bool, String) {
         let status = format!("{}: {} for {}",
-                             self.package_ident,
+                             self.preamble,
                              self.state,
                              SteadyTime::now() - self.state_entered);
         let healthy = match self.state {
@@ -176,77 +184,46 @@ impl Supervisor {
 
     pub fn start(&mut self) -> Result<()> {
         if self.pid.is_none() {
-            outputln!(preamble & self.package_ident.name, "Starting");
+            outputln!(preamble & self.preamble, "Starting");
             self.enter_state(ProcessState::Start);
-
-            let mut cmd = Command::new(self.run_cmd());
-            try!(self.start_platform(&mut cmd));
-            let mut child = try!(cmd.spawn());
+            let mut child = try!(util::create_command(self.run_cmd(),
+                                                      &self.runtime_config.svc_user,
+                                                      &self.runtime_config.svc_group)
+                .spawn());
 
             self.pid = Some(child.id());
             try!(self.create_pidfile());
-            let package_name = self.package_ident.name.clone();
+            let package_name = self.preamble.clone();
             try!(thread::Builder::new()
                 .name(String::from("sup-service-read"))
                 .spawn(move || -> Result<()> { child_reader(&mut child, package_name) }));
             self.enter_state(ProcessState::Up);
             self.has_started = true;
         } else {
-            outputln!(preamble & self.package_ident.name, "Already started");
+            outputln!(preamble & self.preamble, "Already started");
         }
         Ok(())
-    }
-
-    #[cfg(any(target_os="linux", target_os="macos"))]
-    fn start_platform(&mut self, cmd: &mut Command) -> Result<()> {
-        use std::os::unix::process::CommandExt;
-        let uid = users::get_uid_by_name(&self.runtime_config.svc_user);
-        let gid = users::get_gid_by_name(&self.runtime_config.svc_group);
-        if let None = uid {
-            panic!("Can't determine uid");
-        }
-
-        if let None = gid {
-            panic!("Can't determine gid");
-        }
-
-        let uid = uid.unwrap();
-        let gid = gid.unwrap();
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .uid(uid)
-            .gid(gid);
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    fn start_platform(&mut self, cmd: &mut Command) -> Result<()> {
-        unimplemented!();
     }
 
     /// Send a SIGTERM to a process, wait 8 seconds, then send SIGKILL
     pub fn stop(&mut self) -> Result<()> {
         let wait = match self.pid {
             Some(ref pid) => {
-                outputln!(preamble & self.package_ident.name, "Stopping");
-                try!(signals::send_signal_to_pid(*pid, signals::Signal::SIGTERM));
+                outputln!(preamble & self.preamble, "Stopping");
+                try!(signals::send_signal(*pid, signals::Signal::SIGTERM as u32));
                 true
             }
-            None => {
-                outputln!(preamble & self.package_ident.name, "Already stopped");
-                false
-            }
+            None => false,
         };
         if wait {
             let stop_time = SteadyTime::now() + Duration::seconds(8);
             loop {
                 try!(self.check_process());
                 if SteadyTime::now() > stop_time {
-                    outputln!(preamble & self.package_ident.name,
+                    outputln!(preamble & self.preamble,
                               "Process failed to stop with SIGTERM; sending SIGKILL");
                     if let Some(pid) = self.pid {
-                        try!(signals::send_signal_to_pid(pid, signals::Signal::SIGKILL));
+                        try!(signals::send_signal(pid, signals::Signal::SIGKILL as u32));
                     }
                     break;
                 }
@@ -293,14 +270,12 @@ impl Supervisor {
     /// Pass through a Unix signal to a process
     pub fn send_unix_signal(&self, sig: signals::Signal) -> Result<()> {
         if let Some(pid) = self.pid {
-            try!(signals::send_signal_to_pid(pid, sig));
+            try!(signals::send_signal(pid, sig as u32));
         }
         Ok(())
     }
 
     /// if the child process exists, check it's status via waitpid().
-    ///
-    /// Returns true if the process is still running, false if it has died.
     pub fn check_process(&mut self) -> Result<()> {
         if self.pid.is_none() {
             return Ok(());
@@ -314,23 +289,23 @@ impl Supervisor {
                 if WIFEXITED(status) {
                     let exit_code = WEXITSTATUS(status);
                     outputln!("{} - process {} died with exit code {}",
-                              self.package_ident.name,
+                              self.preamble,
                               pid,
                               exit_code);
                 } else if WIFSIGNALED(status) {
                     let exit_signal = WTERMSIG(status);
                     outputln!("{} - process {} died with signal {}",
-                              self.package_ident.name,
+                              self.preamble,
                               pid,
                               exit_signal);
                 } else {
                     outputln!("{} - process {} died, but I don't know how.",
-                              self.package_ident.name,
+                              self.preamble,
                               pid);
                 }
                 match self.state {
                     ProcessState::Up | ProcessState::Start | ProcessState::Restart => {
-                        outputln!("{} - Service exited", self.package_ident.name);
+                        outputln!("{} - Service exited", self.preamble);
                         self.pid = None;
                     }
                     ProcessState::Down => {
@@ -419,6 +394,24 @@ impl Supervisor {
             }
         };
         Ok(Some(pid))
+    }
+}
+
+impl Encodable for Supervisor {
+    fn encode<S: Encoder>(&self, s: &mut S) -> result::Result<(), S::Error> {
+        try!(s.emit_struct("supervisor", 7, |s| {
+            try!(s.emit_struct_field("pid", 0, |s| self.pid.encode(s)));
+            try!(s.emit_struct_field("package_ident", 1, |s| self.package_ident.encode(s)));
+            try!(s.emit_struct_field("preamble", 2, |s| self.preamble.encode(s)));
+            try!(s.emit_struct_field("state", 3, |s| self.state.encode(s)));
+            try!(s.emit_struct_field("state_entered",
+                                     4,
+                                     |s| self.state_entered.to_string().encode(s)));
+            try!(s.emit_struct_field("has_started", 5, |s| self.has_started.encode(s)));
+            try!(s.emit_struct_field("runtime_config", 6, |s| self.runtime_config.encode(s)));
+            Ok(())
+        }));
+        Ok(())
     }
 }
 

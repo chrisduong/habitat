@@ -16,26 +16,23 @@ doc = false
 name = "functional"
 
 [dependencies]
-rustc-serialize = "*"
-log = "*"
-env_logger = "*"
 ansi_term = "*"
-hyper = "*"
-tempdir = "*"
-toml = "*"
-regex = "*"
-libc = "*"
-url = "*"
-iron = "*"
-router = "*"
-time = "*"
-temp_utp = "*"
-rand = "*"
-threadpool = "*"
-openssl = "*"
-lazy_static = "*"
+env_logger = "*"
 handlebars = "*"
-wonder = "*"
+hyper = "*"
+lazy_static = "*"
+libc = "*"
+log = "*"
+iron = "*"
+openssl = "0.7" # lock until hyper bumps to 0.8+
+persistent = "*"
+regex = "*"
+rustc-serialize = "*"
+router = "*"
+tempdir = "*"
+time = "*"
+toml = "*"
+url = "*"
 
 [dependencies.habitat_core]
 path = "../core"
@@ -46,9 +43,8 @@ path = "../common"
 [dependencies.habitat_depot_client]
 path = "../builder-depot-client"
 
-[dependencies.uuid]
-version = "*"
-features = ["rustc-serialize", "v4"]
+[dependencies.habitat_butterfly]
+path = "../butterfly"
 
 [dependencies.clap]
 version = "*"

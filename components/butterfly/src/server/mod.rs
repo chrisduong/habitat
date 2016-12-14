@@ -26,9 +26,10 @@ pub mod pull;
 pub mod push;
 pub mod timing;
 
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::fmt;
 use std::net::{ToSocketAddrs, UdpSocket, SocketAddr};
+use std::result;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -38,6 +39,7 @@ use std::thread;
 
 use habitat_core::service::ServiceGroup;
 use habitat_core::crypto::SymKey;
+use rustc_serialize::{Encoder, Encodable};
 
 use error::{Result, Error};
 use member::{Member, Health, MemberList};
@@ -47,8 +49,8 @@ use rumor::service::Service;
 use rumor::service_config::ServiceConfig;
 use rumor::service_file::ServiceFile;
 use rumor::election::Election;
-use message::swim::{Wire as ProtoWire, Election_Status};
-use protobuf::{self, Message};
+use message;
+use message::swim::Election_Status;
 
 /// The server struct. Is thread-safe.
 #[derive(Debug, Clone)]
@@ -419,12 +421,6 @@ impl Server {
             return false;
         }
 
-        if total_population % 2 == 0 {
-            warn!("This census has an even population. If half the membership fails, quorum will \
-                   never be met, and no leader will be elected. Add another instance to the \
-                   service group!");
-        }
-
         alive_population >= ((total_population / 2) + 1)
     }
 
@@ -454,7 +450,7 @@ impl Server {
                 let election = rumors.get("election")
                     .expect("Lost an election struct between looking it up and reading it.");
                 // If we are finished, and the leader is dead, we should restart the election
-                if election.get_member_id() == self.member_id() {
+                if election.get_status() == Election_Status::Finished && election.get_member_id() == self.member_id() {
                     // If we are the leader, and we have lost quorum, we should restart the election
                     if self.check_quorum(election.key()) == false {
                         warn!("Restarting election with a new term as the leader has lost quorum: {:?}", election);
@@ -562,26 +558,71 @@ impl Server {
         }
     }
 
+    pub fn service_files_for(&self,
+                             service_group: &str,
+                             current_service_files: &HashMap<String, u64>)
+                             -> Vec<(u64, String, Vec<u8>)> {
+        let mut service_files = Vec::new();
+
+        self.service_file_store
+            .with_rumors(service_group, |sf| {
+                let current_incarnation = current_service_files.get(sf.get_filename());
+                if current_incarnation.is_none() ||
+                   sf.get_incarnation() > *current_incarnation.unwrap() {
+                    match sf.body() {
+                        Ok(body) => {
+                            service_files.push((sf.get_incarnation(), String::from(sf.get_filename()), body))
+                        }
+                        Err(e) => {
+                            warn!("Cannot decrypt service file for {} {} {}: {}", service_group, sf.get_filename(), sf.get_incarnation(), e)
+                        }
+                    }
+                }
+            });
+        service_files
+    }
+
+    /// Returns (incarnation, config) if the service group has a configuration.
+    pub fn service_config_for(&self,
+                              service_group: &str,
+                              incarnation: Option<u64>)
+                              -> Option<(u64, String)> {
+        let mut result = None;
+        self.service_config_store
+            .with_rumor(service_group, "service_config", |maybe_sc| {
+                if let Some(sc) = maybe_sc {
+                    if incarnation.is_none() || sc.get_incarnation() > incarnation.unwrap() {
+                        match sc.config() {
+                            Ok(config) => result = Some((sc.get_incarnation(), config)),
+                            Err(e) => {
+                                warn!("Cannot decrypt service config for {}: {}", service_group, e)
+                            }
+                        }
+                    }
+                }
+            });
+        result
+    }
+
     fn generate_wire(&self, payload: Vec<u8>) -> Result<Vec<u8>> {
-        let mut wire = ProtoWire::new();
-        if let Some(ref ring_key) = *self.ring_key {
-            wire.set_encrypted(true);
-            let (nonce, encrypted_payload) = try!(ring_key.encrypt(&payload));
-            wire.set_nonce(nonce);
-            wire.set_payload(encrypted_payload);
-        } else {
-            wire.set_payload(payload);
-        }
-        Ok(try!(wire.write_to_bytes()))
+        message::generate_wire(payload, &self.ring_key)
     }
 
     fn unwrap_wire(&self, payload: &[u8]) -> Result<Vec<u8>> {
-        let mut wire: ProtoWire = try!(protobuf::parse_from_bytes(payload));
-        if let Some(ref ring_key) = *self.ring_key {
-            Ok(try!(ring_key.decrypt(wire.get_nonce(), wire.get_payload())))
-        } else {
-            Ok(wire.take_payload())
-        }
+        message::unwrap_wire(payload, &self.ring_key)
+    }
+}
+
+impl Encodable for Server {
+    fn encode<S: Encoder>(&self, s: &mut S) -> result::Result<(), S::Error> {
+        try!(s.emit_struct("butterfly", 4, |s| {
+            try!(s.emit_struct_field("service", 0, |s| self.service_store.encode(s)));
+            try!(s.emit_struct_field("service_config", 1, |s| self.service_config_store.encode(s)));
+            try!(s.emit_struct_field("service_file", 2, |s| self.service_file_store.encode(s)));
+            try!(s.emit_struct_field("election", 3, |s| self.election_store.encode(s)));
+            Ok(())
+        }));
+        Ok(())
     }
 }
 

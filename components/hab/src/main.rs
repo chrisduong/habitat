@@ -29,11 +29,11 @@ use std::path::Path;
 use std::str::FromStr;
 use std::thread;
 
-use clap::ArgMatches;
+use clap::{ArgMatches, Shell};
 
 use common::ui::UI;
 use hcore::env as henv;
-use hcore::crypto::{init, default_cache_key_path, BoxKeyPair, SigKeyPair, SymKey};
+use hcore::crypto::{init, default_cache_key_path, SigKeyPair};
 use hcore::crypto::keys::PairType;
 use hcore::fs::{cache_artifact_path, cache_analytics_path, cache_key_path, FS_ROOT_PATH};
 use hcore::service::ServiceGroup;
@@ -42,7 +42,6 @@ use hcore::url::{DEFAULT_DEPOT_URL, DEPOT_URL_ENVVAR};
 
 use hab::{analytics, cli, command, config, PRODUCT, VERSION};
 use hab::error::{Error, Result};
-use hab::gossip::hab_gossip;
 
 /// Makes the --auth-token CLI param optional when this env var is set
 const HABITAT_AUTH_TOKEN_ENVVAR: &'static str = "HAB_AUTH_TOKEN";
@@ -50,14 +49,10 @@ const HABITAT_AUTH_TOKEN_ENVVAR: &'static str = "HAB_AUTH_TOKEN";
 const HABITAT_ORIGIN_ENVVAR: &'static str = "HAB_ORIGIN";
 /// Makes the --org CLI param optional when this env var is set
 const HABITAT_ORG_ENVVAR: &'static str = "HAB_ORG";
-/// Makes the --user CLI param optional when this env var is set
-const HABITAT_USER_ENVVAR: &'static str = "HAB_USER";
 
 const FS_ROOT_ENVVAR: &'static str = "FS_ROOT";
 
 const DEFAULT_BINLINK_DIR: &'static str = "/bin";
-
-const MAX_FILE_UPLOAD_SIZE_BYTES: u64 = 4096;
 
 fn main() {
     env_logger::init().unwrap();
@@ -81,22 +76,10 @@ fn start(ui: &mut UI) -> Result<()> {
             e.exit();
         });
     match app_matches.subcommand() {
-        ("apply", Some(m)) => try!(sub_config_apply(ui, m)),
         ("cli", Some(matches)) => {
             match matches.subcommand() {
                 ("setup", Some(_)) => try!(sub_cli_setup(ui)),
-                _ => unreachable!(),
-            }
-        }
-        ("config", Some(matches)) => {
-            match matches.subcommand() {
-                ("apply", Some(m)) => try!(sub_config_apply(ui, m)),
-                _ => unreachable!(),
-            }
-        }
-        ("file", Some(matches)) => {
-            match matches.subcommand() {
-                ("upload", Some(m)) => try!(sub_file_upload(ui, m)),
+                ("completers", Some(m)) => try!(sub_cli_completers(m)),
                 _ => unreachable!(),
             }
         }
@@ -191,93 +174,10 @@ fn sub_cli_setup(ui: &mut UI) -> Result<()> {
                                &cache_analytics_path(fs_root_path))
 }
 
-fn sub_config_apply(ui: &mut UI, m: &ArgMatches) -> Result<()> {
-    let fs_root = henv::var(FS_ROOT_ENVVAR).unwrap_or(FS_ROOT_PATH.to_string());
-    let fs_root_path = Some(Path::new(&fs_root));
-    let peers_str = m.value_of("PEER").unwrap_or("127.0.0.1");
-    let mut peers: Vec<String> = peers_str.split(",").map(|p| p.into()).collect();
-    for p in peers.iter_mut() {
-        if p.find(':').is_none() {
-            p.push(':');
-            p.push_str(&hab_gossip::GOSSIP_DEFAULT_PORT.to_string());
-        }
-    }
-    let number = value_t!(m, "VERSION_NUMBER", u64).unwrap_or_else(|e| e.exit());
-    let file_path = match m.value_of("FILE") {
-        Some("-") | None => None,
-        Some(p) => Some(Path::new(p)),
-    };
-
-    init();
-    let cache = default_cache_key_path(fs_root_path);
-    let ring_key = match m.value_of("RING") {
-        Some(name) => Some(try!(SymKey::get_latest_pair_for(&name, &cache))),
-        None => None,
-    };
-
-    let mut sg = try!(ServiceGroup::from_str(m.value_of("SERVICE_GROUP").unwrap())); // Required via clap
-
-    // use the org if it's passed in on the CLI or set in an env var
-    let org = match org_param_or_env(&m) {
-        Ok(org) => Some(org.to_string()),
-        Err(_e) => None,
-    };
-    sg.organization = org;
-
-    command::config::apply::start(ui, &peers, ring_key.as_ref(), &sg, number, file_path)
-}
-
-fn sub_file_upload(ui: &mut UI, m: &ArgMatches) -> Result<()> {
-    let fs_root = henv::var(FS_ROOT_ENVVAR).unwrap_or(FS_ROOT_PATH.to_string());
-    let fs_root_path = Some(Path::new(&fs_root));
-
-    let peers_str = m.value_of("PEER").unwrap_or("127.0.0.1");
-    let mut peers: Vec<String> = peers_str.split(",").map(|p| p.into()).collect();
-    for p in peers.iter_mut() {
-        if p.find(':').is_none() {
-            p.push(':');
-            p.push_str(&hab_gossip::GOSSIP_DEFAULT_PORT.to_string());
-        }
-    }
-    let number = value_t!(m, "VERSION_NUMBER", u64).unwrap_or_else(|e| e.exit());
-    let file_path = Path::new(m.value_of("FILE").unwrap()); // Required via clap
-    match file_path.metadata() {
-        Ok(md) => {
-            if md.len() > MAX_FILE_UPLOAD_SIZE_BYTES {
-                return Err(Error::CryptoCLI(format!("Maximum encrypted file size is {} bytes",
-                                                    MAX_FILE_UPLOAD_SIZE_BYTES)));
-            }
-        }
-        Err(e) => {
-            return Err(Error::CryptoCLI(format!("Error checking file metadata: {}", e)));
-
-        }
-    };
-
-    init();
-    let cache = default_cache_key_path(fs_root_path);
-    let ring_key = match m.value_of("RING") {
-        Some(name) => Some(try!(SymKey::get_latest_pair_for(&name, &cache))),
-        None => None,
-    };
-
-    let mut sg = try!(ServiceGroup::from_str(m.value_of("SERVICE_GROUP").unwrap()));  // Required via clap
-    // apply the organization name to the service group, either
-    // from HAB_ORG or the --org param
-    let org = try!(org_param_or_env(&m));
-    sg.organization = Some(org.to_string());
-    let service_pair = try!(BoxKeyPair::get_latest_pair_for(&sg.to_string(), &cache));
-
-    let user = try!(user_param_or_env(&m));
-    let user_pair = try!(BoxKeyPair::get_latest_pair_for(&user, &cache));
-
-    command::file::upload::start(ui,
-                                 &peers,
-                                 ring_key.as_ref(),
-                                 &user_pair,
-                                 &service_pair,
-                                 number,
-                                 file_path)
+fn sub_cli_completers(m: &ArgMatches) -> Result<()> {
+    let shell = m.value_of("SHELL").expect("Missing Shell; A shell is required");
+    cli::get().gen_completions_to("hab", shell.parse::<Shell>().unwrap(), &mut io::stdout());
+    Ok(())
 }
 
 fn sub_origin_key_download(ui: &mut UI, m: &ArgMatches) -> Result<()> {
@@ -424,6 +324,11 @@ fn sub_pkg_install(ui: &mut UI, m: &ArgMatches) -> Result<()> {
     let env_or_default = henv::var(DEPOT_URL_ENVVAR).unwrap_or(DEFAULT_DEPOT_URL.to_string());
     let url = m.value_of("DEPOT_URL").unwrap_or(&env_or_default);
     let ident_or_artifacts = m.values_of("PKG_IDENT_OR_ARTIFACT").unwrap(); // Required via clap
+    let ignore_target = if m.is_present("IGNORE_TARGET") {
+        true
+    } else {
+        false
+    };
     init();
 
     for ident_or_artifact in ident_or_artifacts {
@@ -433,7 +338,8 @@ fn sub_pkg_install(ui: &mut UI, m: &ArgMatches) -> Result<()> {
                                                       PRODUCT,
                                                       VERSION,
                                                       Path::new(&fs_root),
-                                                      &cache_artifact_path(fs_root_path)));
+                                                      &cache_artifact_path(fs_root_path),
+                                                      ignore_target));
     }
     Ok(())
 }
@@ -561,6 +467,15 @@ fn sub_user_key_generate(ui: &mut UI, m: &ArgMatches) -> Result<()> {
 fn exec_subcommand_if_called(ui: &mut UI) -> Result<()> {
     let mut args = env::args();
     match (args.nth(1).unwrap_or_default().as_str(), args.next().unwrap_or_default().as_str()) {
+        ("butterfly", _) => command::butterfly::start(ui, env::args_os().skip(2).collect()),
+        ("apply", _) => {
+            let mut args: Vec<OsString> = env::args_os().skip(1).collect();
+            args.insert(0, OsString::from("config"));
+            command::butterfly::start(ui, args)
+        }
+        ("config", _) | ("file", _) => {
+            command::butterfly::start(ui, env::args_os().skip(1).collect())
+        }
         ("stu", _) | ("stud", _) | ("studi", _) | ("studio", _) => {
             command::studio::start(ui, env::args_os().skip(2).collect())
         }
@@ -640,21 +555,6 @@ fn org_param_or_env(m: &ArgMatches) -> Result<String> {
             match henv::var(HABITAT_ORG_ENVVAR) {
                 Ok(v) => Ok(v),
                 Err(_) => return Err(Error::CryptoCLI("No organization specified".to_string())),
-            }
-        }
-    }
-}
-
-/// Check to see if the user has passed in a USER param.
-/// If not, check the HAB_USER env var. If that's
-/// empty too, then return an error.
-fn user_param_or_env(m: &ArgMatches) -> Result<String> {
-    match m.value_of("USER") {
-        Some(u) => Ok(u.to_string()),
-        None => {
-            match env::var(HABITAT_USER_ENVVAR) {
-                Ok(v) => Ok(v),
-                Err(_) => return Err(Error::CryptoCLI("No user specified".to_string())),
             }
         }
     }

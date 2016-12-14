@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
-use common;
+use btest;
 
 #[test]
 fn two_members_share_services() {
-    let mut net = common::net::SwimNet::new(2);
+    let mut net = btest::SwimNet::new(2);
     net.mesh();
     net.add_service(0, "witcher");
     net.wait_for_rounds(2);

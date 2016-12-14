@@ -22,8 +22,10 @@ use dbcache::{self, BasicSet};
 use hab_core::package::{Identifiable, FromArchive, PackageArchive};
 use hab_core::crypto::keys::{self, PairType};
 use hab_core::crypto::SigKeyPair;
+use hab_core::event::*;
 use hab_net::config::RouteAddrs;
 use hab_net::http::controller::*;
+use hab_net::privilege;
 use hab_net::routing::{Broker, BrokerConn};
 use hab_net::server::NetIdent;
 use hyper::mime::{Mime, TopLevel, SubLevel, Attr, Value};
@@ -31,6 +33,7 @@ use iron::headers::ContentType;
 use iron::prelude::*;
 use iron::{status, headers};
 use iron::request::Body;
+use iron::typemap;
 use mount::Mount;
 use persistent;
 use protocol::depotsrv;
@@ -46,6 +49,7 @@ use super::Depot;
 use config::Config;
 use error::{Error, Result};
 
+define_event_log!();
 include!(concat!(env!("OUT_DIR"), "/serde_types.rs"));
 
 const PAGINATION_RANGE_DEFAULT: isize = 0;
@@ -155,8 +159,9 @@ pub fn check_origin_access<T: ToString>(conn: &mut BrokerConn,
 }
 
 pub fn invite_to_origin(req: &mut Request) -> IronResult<Response> {
-    let session = req.extensions.get::<Authenticated>().unwrap();
-    let params = req.extensions.get::<Router>().unwrap();
+    // TODO: SA - Eliminate need to clone the session and params
+    let session = req.extensions.get::<Authenticated>().unwrap().clone();
+    let params = req.extensions.get::<Router>().unwrap().clone();
     let origin = match params.find("origin") {
         Some(origin) => origin,
         None => return Ok(Response::with(status::BadRequest)),
@@ -191,9 +196,19 @@ pub fn invite_to_origin(req: &mut Request) -> IronResult<Response> {
         None => return Ok(Response::with(status::NotFound)),
     };
     invite_request.set_owner_id(session.get_id());
+
     // store invitations in the vault
     match conn.route::<OriginInvitationCreate, OriginInvitation>(&invite_request) {
-        Ok(invitation) => Ok(render_json(status::Created, &invitation)),
+        Ok(invitation) => {
+            log_event!(req,
+                       Event::OriginInvitationSend {
+                           origin: origin,
+                           user: user_to_invite,
+                           id: &invitation.get_id().to_string(),
+                           account: &session.get_id().to_string(),
+                       });
+            Ok(render_json(status::Created, &invitation))
+        }
         Err(err) => Ok(render_net_error(&err)),
     }
 }
@@ -299,11 +314,13 @@ fn write_file(filename: &PathBuf, body: &mut Body) -> Result<bool> {
 
 fn upload_origin_key(req: &mut Request) -> IronResult<Response> {
     let depot = req.get::<persistent::Read<Depot>>().unwrap();
-    let params = req.extensions.get::<Router>().unwrap();
+    // TODO: SA - Eliminate need to clone the session and params
+    let params = req.extensions.get::<Router>().unwrap().clone();
     let origin = params.find("origin").unwrap();
     let revision = params.find("revision").unwrap();
+    let session = req.extensions.get::<Authenticated>().unwrap().clone();
+
     if !depot.config.insecure {
-        let session = req.extensions.get::<Authenticated>().unwrap();
         let mut conn = Broker::connect().unwrap();
         if !try!(check_origin_access(&mut conn, session.get_id(), origin)) {
             return Ok(Response::with(status::Forbidden));
@@ -339,6 +356,13 @@ fn upload_origin_key(req: &mut Request) -> IronResult<Response> {
     try!(write_string_to_file(&origin_keyfile, content));
     try!(depot.datastore.origin_keys.write(&origin, &revision));
 
+    log_event!(req,
+               Event::OriginKeyUpload {
+                   origin: origin,
+                   version: revision,
+                   account: &session.get_id().to_string(),
+               });
+
     let mut response = Response::with((status::Created,
                                        format!("/origins/{}/keys/{}", &origin, &revision)));
     let mut base_url = req.url.clone().into_generic_url();
@@ -347,15 +371,34 @@ fn upload_origin_key(req: &mut Request) -> IronResult<Response> {
     Ok(response)
 }
 
+fn download_latest_origin_secret_key(req: &mut Request) -> IronResult<Response> {
+    let params = req.extensions.get::<Router>().unwrap();
+    let mut conn = Broker::connect().unwrap();
+    let mut request = OriginSecretKeyGet::new();
+    let origin = params.find("origin").unwrap();
+    match try!(get_origin(&mut conn, origin)) {
+        Some(mut origin) => {
+            request.set_owner_id(origin.get_owner_id());
+            request.set_origin(origin.take_name());
+        }
+        None => return Ok(Response::with(status::NotFound)),
+    }
+    match conn.route::<OriginSecretKeyGet, OriginSecretKey>(&request) {
+        Ok(ref key) => Ok(render_json(status::Ok, key)),
+        Err(err) => Ok(render_net_error(&err)),
+    }
+}
+
 fn upload_origin_secret_key(req: &mut Request) -> IronResult<Response> {
     debug!("Upload Origin Secret Key {:?}", req);
-    let session = req.extensions.get::<Authenticated>().unwrap();
-    let params = req.extensions.get::<Router>().unwrap();
+    // TODO: SA - Eliminate need to clone the session and params
+    let session = req.extensions.get::<Authenticated>().unwrap().clone();
+    let params = req.extensions.get::<Router>().unwrap().clone();
     let mut conn = Broker::connect().unwrap();
     let mut request = OriginSecretKeyCreate::new();
     request.set_owner_id(session.get_id());
 
-    match params.find("origin") {
+    let origin = match params.find("origin") {
         Some(origin) => {
             if !try!(check_origin_access(&mut conn, session.get_id(), origin)) {
                 return Ok(Response::with(status::Forbidden));
@@ -366,7 +409,8 @@ fn upload_origin_secret_key(req: &mut Request) -> IronResult<Response> {
                     request.set_origin_id(origin.get_id());
                 }
                 None => return Ok(Response::with(status::NotFound)),
-            };
+            }
+            origin
         }
         None => return Ok(Response::with(status::BadRequest)),
     };
@@ -407,7 +451,15 @@ fn upload_origin_secret_key(req: &mut Request) -> IronResult<Response> {
     request.set_owner_id(0);
 
     match conn.route::<OriginSecretKeyCreate, OriginSecretKey>(&request) {
-        Ok(_) => Ok(Response::with(status::Created)),
+        Ok(_) => {
+            log_event!(req,
+                       Event::OriginSecretKeyUpload {
+                           origin: origin,
+                           version: request.get_revision(),
+                           account: &session.get_id().to_string(),
+                       });
+            Ok(Response::with(status::Created))
+        }
         Err(err) => Ok(render_net_error(&err)),
     }
 }
@@ -434,8 +486,9 @@ fn upload_package(req: &mut Request) -> IronResult<Response> {
            checksum_from_param,
            ident);
 
+    // TODO: SA - Eliminate need to clone the session
+    let session = req.extensions.get::<Authenticated>().unwrap().clone();
     if !depot.config.insecure {
-        let session = req.extensions.get::<Authenticated>().unwrap();
         if !try!(check_origin_access(&mut conn, session.get_id(), &ident.get_origin())) {
             return Ok(Response::with(status::Forbidden));
         }
@@ -483,6 +536,16 @@ fn upload_package(req: &mut Request) -> IronResult<Response> {
     };
     if ident.satisfies(object.get_ident()) {
         depot.datastore.packages.write(&object).unwrap();
+
+        log_event!(req,
+                   Event::PackageUpload {
+                       origin: &ident.get_origin(),
+                       package: &ident.get_name(),
+                       version: &ident.get_version(),
+                       release: &ident.get_release(),
+                       account: &session.get_id().to_string(),
+                   });
+
         let mut response = Response::with((status::Created,
                                            format!("/pkgs/{}/download", object.get_ident())));
         let mut base_url = req.url.clone().into_generic_url();
@@ -615,6 +678,49 @@ fn list_origin_keys(req: &mut Request) -> IronResult<Response> {
         }
         Err(e) => {
             error!("list_origin_keys:1, err={:?}", e);
+            Ok(Response::with(status::InternalServerError))
+        }
+    }
+}
+
+fn list_unique_packages(req: &mut Request) -> IronResult<Response> {
+    let depot = req.get::<persistent::Read<Depot>>().unwrap();
+    let (start, stop) = match extract_pagination(req) {
+        Ok(range) => range,
+        Err(response) => return Ok(response),
+    };
+    let params = req.extensions.get::<Router>().unwrap();
+    let ident: String = match params.find("origin") {
+        Some(origin) => origin.to_string(),
+        None => return Ok(Response::with(status::BadRequest)),
+    };
+
+    match depot.datastore.packages.index.unique(&ident, start, stop) {
+        Ok(packages) => {
+            let count = depot.datastore.packages.index.count_unique(&ident).unwrap();
+            debug!("list_unique_packages start: {}, stop: {}, total count: {}",
+                   start,
+                   stop,
+                   count);
+            let body = package_results_json(&packages, count as isize, start, stop);
+
+            let mut response = if count as isize > (stop + 1) {
+                Response::with((status::PartialContent, body))
+            } else {
+                Response::with((status::Ok, body))
+            };
+
+            response.headers.set(ContentType(Mime(TopLevel::Application,
+                                                  SubLevel::Json,
+                                                  vec![(Attr::Charset, Value::Utf8)])));
+            dont_cache_response(&mut response);
+            Ok(response)
+        }
+        Err(Error::DataStore(dbcache::Error::EntityNotFound)) => {
+            Ok(Response::with((status::NotFound)))
+        }
+        Err(e) => {
+            error!("list_packages:2, err={:?}", e);
             Ok(Response::with(status::InternalServerError))
         }
     }
@@ -931,6 +1037,7 @@ fn dont_cache_response(response: &mut Response) {
 
 pub fn router(depot: Depot) -> Result<Chain> {
     let basic = Authenticated::new(&depot.config);
+    let worker = Authenticated::new(&depot.config).require(privilege::BUILD_WORKER);
     let router = router!(
         channels: get "/channels" => list_channels,
         channel_packages: get "/channels/:channel/pkgs/:origin" => list_packages,
@@ -962,6 +1069,7 @@ pub fn router(depot: Depot) -> Result<Chain> {
 
         package_search: get "/pkgs/search/:query" => search_packages,
         packages: get "/pkgs/:origin" => list_packages,
+        packages_unique: get "/:origin/pkgs" => list_unique_packages,
         packages_pkg: get "/pkgs/:origin/:pkg" => list_packages,
         package_pkg_latest: get "/pkgs/:origin/:pkg/latest" => show_package,
         packages_version: get "/pkgs/:origin/:pkg/:version" => list_packages,
@@ -997,6 +1105,13 @@ pub fn router(depot: Depot) -> Result<Chain> {
         origin_secret_key_create: post "/origins/:origin/secret_keys/:revision" => {
             XHandler::new(upload_origin_secret_key).before(basic.clone())
         },
+        origin_secret_key_latest: get "/origins/:origin/secret_keys/latest" => {
+            if depot.config.insecure {
+                XHandler::new(download_latest_origin_secret_key)
+            } else {
+                XHandler::new(download_latest_origin_secret_key).before(worker.clone())
+            }
+        },
         origin_invitation_create: post "/origins/:origin/users/:username/invitations" => {
             XHandler::new(invite_to_origin).before(basic.clone())
         },
@@ -1008,6 +1123,8 @@ pub fn router(depot: Depot) -> Result<Chain> {
         }
     );
     let mut chain = Chain::new(router);
+    chain.link(persistent::Read::<EventLog>::both(EventLogger::new("hab-depot",
+                                                                   depot.config.events_enabled)));
     chain.link(persistent::Read::<Depot>::both(depot));
     chain.link_after(Cors);
     Ok(chain)

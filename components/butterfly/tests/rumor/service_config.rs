@@ -12,14 +12,35 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
-use common;
+use btest;
+use habitat_core::service::ServiceGroup;
+use habitat_butterfly::client::Client;
 
 #[test]
 fn two_members_share_service_config() {
-    let mut net = common::net::SwimNet::new(2);
+    let mut net = btest::SwimNet::new(2);
     net.mesh();
     net.add_service_config(0, "witcher", "tcp-backlog = 128");
+    net.wait_for_gossip_rounds(1);
+    net[1]
+        .service_config_store
+        .with_rumor("witcher.prod", "service_config", |u| assert!(u.is_some()));
+}
+
+#[test]
+fn service_config_via_client() {
+    let mut net = btest::SwimNet::new(2);
+    net.mesh();
+
+    net.wait_for_gossip_rounds(1);
+    let mut client = Client::new(net[0].gossip_addr(), None)
+        .expect("Cannot create Butterfly Client");
+    let payload = Vec::from("I want to get lost in you, tokyo".as_bytes());
+    client.send_service_config(ServiceGroup::new("witcher", "prod", None),
+                             0,
+                             payload,
+                             false)
+        .expect("Cannot send the service configuration");
     net.wait_for_gossip_rounds(1);
     net[1]
         .service_config_store

@@ -38,13 +38,10 @@ use hcore::crypto::init as crypto_init;
 use hcore::package::{PackageArchive, PackageIdent};
 use hcore::url::{DEFAULT_DEPOT_URL, DEPOT_URL_ENVVAR};
 
-use sup::config::{gcache, gconfig, Command, Config, UpdateStrategy};
+use sup::config::{gcache, gconfig, Command, Config, GossipListenAddr, UpdateStrategy, Topology};
 use sup::error::{Error, Result, SupError};
 use sup::command::*;
-use sup::topology::Topology;
-use sup::util::parse_ip_port_with_defaults;
-use sup::util::path::busybox_paths;
-use sup::util::sys::ip;
+use sup::http_gateway;
 
 /// Our output key
 static LOGKEY: &'static str = "MN";
@@ -54,10 +51,6 @@ const VERSION: &'static str = include_str!(concat!(env!("OUT_DIR"), "/VERSION"))
 
 /// CLI defaults
 static DEFAULT_GROUP: &'static str = "default";
-
-static DEFAULT_HTTP_LISTEN_IP: &'static str = "0.0.0.0";
-static DEFAULT_HTTP_LISTEN_PORT: u16 = 9631;
-const DEFAULT_GOSSIP_LISTEN_PORT: u16 = 9634;
 
 static RING_ENVVAR: &'static str = "HAB_RING";
 static RING_KEY_ENVVAR: &'static str = "HAB_RING_KEY";
@@ -139,38 +132,19 @@ fn config_from_args(subcommand: &str, sub_args: &ArgMatches) -> Result<()> {
             .as_ref())
         .to_string());
 
-    let mut env_path = String::new();
-    for path in try!(busybox_paths()) {
-        if env_path.len() > 0 {
-            env_path.push(':');
-        }
-        env_path.push_str(path.to_string_lossy().as_ref());
+    if let Some(addr_str) = sub_args.value_of("listen-peer") {
+        outputln!("{}",
+                  Yellow.bold()
+                      .paint("--listen-peer flag deprecated, please use --listen-gossip. This \
+                              flag will be removed in a future release."));
+        config.gossip_listen = try!(GossipListenAddr::from_str(addr_str));
     }
-
-    // NOTE: ip() returns an IpAddr, which we conveniently turn into a string
-    // via to_string().
-    let default_gossip_ip = try!(ip()).to_string();
-    let (gossip_ip, gossip_port) = try!(parse_ip_port_with_defaults(
-                                        sub_args.value_of("listen-peer"),
-                                        &default_gossip_ip,
-                                        DEFAULT_GOSSIP_LISTEN_PORT));
-
-    debug!("Gossip IP = {}", &gossip_ip);
-    debug!("Gossip port = {}", &gossip_port);
-    config.set_gossip_listen_ip(gossip_ip);
-    config.set_gossip_listen_port(gossip_port);
-
-    let (sidecar_ip, sidecar_port) = try!(parse_ip_port_with_defaults(
-                                            sub_args.value_of("listen-http"),
-                                            DEFAULT_HTTP_LISTEN_IP,
-                                            DEFAULT_HTTP_LISTEN_PORT));
-
-    debug!("HTTP IP = {}", &sidecar_ip);
-    debug!("HTTP port = {}", &sidecar_port);
-
-    config.set_http_listen_ip(sidecar_ip);
-    config.set_http_listen_port(sidecar_port);
-
+    if let Some(addr_str) = sub_args.value_of("listen-gossip") {
+        config.gossip_listen = try!(GossipListenAddr::from_str(addr_str));
+    }
+    if let Some(addr_str) = sub_args.value_of("listen-http") {
+        config.http_listen_addr = try!(http_gateway::ListenAddr::from_str(addr_str));
+    }
     let gossip_peers = match sub_args.values_of("peer") {
         Some(gp) => gp.map(|s| s.to_string()).collect(),
         None => vec![],
@@ -304,10 +278,15 @@ fn main() {
             .value_name("ip:port")
             .multiple(true)
             .help("The listen address of an initial peer"))
+        .arg(Arg::with_name("listen-gossip")
+            .long("listen-gossip")
+            .value_name("ip:port")
+            .help("The listen address [default: 0.0.0.0:9638]"))
         .arg(Arg::with_name("listen-peer")
             .long("listen-peer")
             .value_name("ip:port")
-            .help("The listen address [default: ip_with_default_route:9634]"))
+            .help("The listen address [default: 0.0.0.0:9638]")
+            .hidden(true))
         .arg(Arg::with_name("listen-http")
             .long("listen-http")
             .value_name("ip:port")

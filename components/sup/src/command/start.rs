@@ -70,7 +70,7 @@ use {PRODUCT, VERSION};
 use error::{Error, Result};
 use config::{gconfig, UpdateStrategy};
 use package::Package;
-use topology::{self, Topology};
+use manager::Manager;
 
 static LOGKEY: &'static str = "CS";
 
@@ -109,8 +109,7 @@ pub fn package() -> Result<()> {
                     // automatically receive updates for any releases, regardless of version
                     // number, for the started  package.
                     let depot_client = try!(Client::new(url, PRODUCT, VERSION, None));
-                    let latest_pkg_data =
-                        try!(depot_client.show_package((*gconfig().package()).clone()));
+                    let latest_pkg_data = try!(depot_client.show_package(gconfig().package()));
                     let latest_ident: PackageIdent = latest_pkg_data.get_ident().clone().into();
                     if &latest_ident > package.ident() {
                         outputln!("Downloading latest version from Depot: {}", latest_ident);
@@ -120,7 +119,8 @@ pub fn package() -> Result<()> {
                                                                PRODUCT,
                                                                VERSION,
                                                                Path::new(FS_ROOT_PATH),
-                                                               &cache_artifact_path(None)));
+                                                               &cache_artifact_path(None),
+                                                               false));
                         package = try!(Package::load(&new_pkg_data, None));
                     } else {
                         outputln!("Already running latest.");
@@ -141,7 +141,8 @@ pub fn package() -> Result<()> {
                                         PRODUCT,
                                         VERSION,
                                         Path::new(FS_ROOT_PATH),
-                                        &cache_artifact_path(None)))
+                                        &cache_artifact_path(None),
+                                        false))
                 }
                 None => {
                     outputln!("Searching for {} in remote {}",
@@ -153,7 +154,8 @@ pub fn package() -> Result<()> {
                                         PRODUCT,
                                         VERSION,
                                         Path::new(FS_ROOT_PATH),
-                                        &cache_artifact_path(None)))
+                                        &cache_artifact_path(None),
+                                        false))
                 }
             };
             let package = try!(Package::load(&new_pkg_data, None));
@@ -166,9 +168,8 @@ fn start_package(package: Package) -> Result<()> {
     let run_path = try!(package.run_path());
     debug!("Setting the PATH to {}", run_path);
     env::set_var("PATH", &run_path);
-    match *gconfig().topology() {
-        Topology::Standalone => topology::standalone::run(package),
-        Topology::Leader => topology::leader::run(package),
-        Topology::Initializer => topology::initializer::run(package),
-    }
+
+    let mut manager = try!(Manager::new());
+    try!(manager.add_service(package, *gconfig().topology(), gconfig().update_strategy()));
+    manager.run()
 }

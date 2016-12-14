@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::net;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use hab_core::config::{ConfigFile, ParseInto};
 use hab_net::config::{GitHubOAuth, RouteAddrs};
@@ -34,10 +34,10 @@ const DEV_GITHUB_CLIENT_SECRET: &'static str = "438223113eeb6e7edf2d2f91a232b72d
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
     pub path: String,
-    pub listen_addr: net::SocketAddrV4,
-    pub datastore_addr: net::SocketAddrV4,
+    pub listen_addr: SocketAddr,
+    pub datastore_addr: SocketAddr,
     /// List of net addresses for routing servers to connect to
-    pub routers: Vec<net::SocketAddrV4>,
+    pub routers: Vec<SocketAddr>,
     /// URL to GitHub API
     pub github_url: String,
     /// Client identifier used for GitHub API requests
@@ -46,6 +46,8 @@ pub struct Config {
     pub github_client_secret: String,
     /// allows you to upload packages and public keys without auth
     pub insecure: bool,
+    /// Whether to log events for funnel metrics
+    pub events_enabled: bool,
 }
 
 impl ConfigFile for Config {
@@ -57,6 +59,7 @@ impl ConfigFile for Config {
         try!(toml.parse_into("cfg.bind_addr", &mut cfg.listen_addr));
         try!(toml.parse_into("cfg.datastore_addr", &mut cfg.datastore_addr));
         try!(toml.parse_into("cfg.router_addrs", &mut cfg.routers));
+        try!(toml.parse_into("cfg.events_enabled", &mut cfg.events_enabled));
         Ok(cfg)
     }
 }
@@ -65,13 +68,14 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             path: "/hab/svc/hab-depot/data".to_string(),
-            listen_addr: net::SocketAddrV4::new(net::Ipv4Addr::new(0, 0, 0, 0), 9632),
-            datastore_addr: net::SocketAddrV4::new(net::Ipv4Addr::new(127, 0, 0, 1), 6379),
-            routers: vec![net::SocketAddrV4::new(net::Ipv4Addr::new(127, 0, 0, 1), 5562)],
+            listen_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 9632)),
+            datastore_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 6379)),
+            routers: vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 5562))],
             github_url: GITHUB_URL.to_string(),
             github_client_id: DEV_GITHUB_CLIENT_ID.to_string(),
             github_client_secret: DEV_GITHUB_CLIENT_SECRET.to_string(),
             insecure: false,
+            events_enabled: false, // TODO: change to default to true later
         }
     }
 }
@@ -86,7 +90,7 @@ impl<'a> redis::IntoConnectionInfo for &'a Config {
 }
 
 impl RouteAddrs for Config {
-    fn route_addrs(&self) -> &Vec<net::SocketAddrV4> {
+    fn route_addrs(&self) -> &Vec<SocketAddr> {
         &self.routers
     }
 }

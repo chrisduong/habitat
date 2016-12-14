@@ -48,6 +48,10 @@ impl ServiceGroup {
     pub fn dotted_org_or_empty(&self) -> String {
         self.organization.as_ref().map_or("".to_string(), |s| format!(".{}", &s))
     }
+
+    pub fn as_string(&self) -> String {
+        format!("{}", self)
+    }
 }
 
 impl fmt::Display for ServiceGroup {
@@ -89,18 +93,6 @@ mod test {
     use std::str::FromStr;
 
     use super::ServiceGroup;
-
-    #[test]
-    fn service_group_fields() {
-        let sg = ServiceGroup {
-            service: "kayla".to_string(),
-            group: "album".to_string(),
-            organization: Some("flying_colors".to_string()),
-        };
-        assert_eq!(sg.service, "kayla");
-        assert_eq!(sg.group, "album");
-        assert_eq!(sg.organization, Some("flying_colors".to_string()));
-    }
 
     #[test]
     fn fmt_without_organization() {

@@ -227,7 +227,8 @@ pub mod export {
                                         PRODUCT,
                                         VERSION,
                                         Path::new(FS_ROOT_PATH),
-                                        &cache_artifact_path(None)));
+                                        &cache_artifact_path(None),
+                                        false));
                 }
             }
             let pkg_arg = OsString::from(&ident.to_string());
@@ -490,7 +491,7 @@ pub mod upload {
         try!(ui.begin(format!("Uploading {}", archive_path.as_ref().display())));
         let tdeps = try!(archive.tdeps());
         for dep in tdeps.into_iter() {
-            match depot_client.show_package(dep.clone()) {
+            match depot_client.show_package(&dep) {
                 Ok(_) => try!(ui.status(Status::Using, format!("existing {}", &dep))),
                 Err(depot_client::Error::APIError(StatusCode::NotFound, _)) => {
                     let candidate_path = match archive_path.as_ref().parent() {
@@ -519,7 +520,7 @@ pub mod upload {
             }
         }
         let ident = try!(archive.ident());
-        match depot_client.show_package(ident.clone()) {
+        match depot_client.show_package(&ident) {
             Ok(_) => {
                 try!(ui.status(Status::Using, format!("existing {}", &ident)));
                 Ok(())

@@ -60,7 +60,8 @@ pub fn start<P1: ?Sized, P2: ?Sized>(ui: &mut UI,
                                      product: &str,
                                      version: &str,
                                      fs_root_path: &P1,
-                                     cache_artifact_path: &P2)
+                                     cache_artifact_path: &P2,
+                                     ignore_target: bool)
                                      -> Result<PackageIdent>
     where P1: AsRef<Path>,
           P2: AsRef<Path>
@@ -81,7 +82,8 @@ pub fn start<P1: ?Sized, P2: ?Sized>(ui: &mut UI,
                                      version,
                                      fs_root_path.as_ref(),
                                      cache_artifact_path.as_ref(),
-                                     &cache_key_path));
+                                     &cache_key_path,
+                                     ignore_target));
 
     if Path::new(ident_or_archive).is_file() {
         task.from_artifact(ui, &Path::new(ident_or_archive))
@@ -95,6 +97,7 @@ struct InstallTask<'a> {
     fs_root_path: &'a Path,
     cache_artifact_path: &'a Path,
     cache_key_path: &'a Path,
+    ignore_target: bool,
 }
 
 impl<'a> InstallTask<'a> {
@@ -103,13 +106,15 @@ impl<'a> InstallTask<'a> {
                version: &str,
                fs_root_path: &'a Path,
                cache_artifact_path: &'a Path,
-               cache_key_path: &'a Path)
+               cache_key_path: &'a Path,
+               ignore_target: bool)
                -> Result<Self> {
         Ok(InstallTask {
             depot_client: try!(Client::new(url, product, version, Some(fs_root_path))),
             fs_root_path: fs_root_path,
             cache_artifact_path: cache_artifact_path,
             cache_key_path: cache_key_path,
+            ignore_target: ignore_target,
         })
     }
 
@@ -117,7 +122,7 @@ impl<'a> InstallTask<'a> {
         try!(ui.begin(format!("Installing {}", &ident)));
         let mut ident = ident;
         if !ident.fully_qualified() {
-            ident = try!(self.fetch_latest_pkg_ident_for(ident));
+            ident = try!(self.fetch_latest_pkg_ident_for(&ident));
         }
         if try!(self.is_package_installed(&ident)) {
             try!(ui.status(Status::Using, &ident));
@@ -229,7 +234,7 @@ impl<'a> InstallTask<'a> {
         Ok(self.cache_artifact_path.join(name))
     }
 
-    fn fetch_latest_pkg_ident_for(&self, fuzzy_ident: PackageIdent) -> Result<PackageIdent> {
+    fn fetch_latest_pkg_ident_for(&self, fuzzy_ident: &PackageIdent) -> Result<PackageIdent> {
         Ok(try!(self.depot_client.show_package(fuzzy_ident)).into())
     }
 
@@ -252,8 +257,7 @@ impl<'a> InstallTask<'a> {
         }
 
         try!(ui.status(Status::Downloading, ident));
-        try!(self.depot_client
-            .fetch_package(ident.clone(), self.cache_artifact_path, ui.progress()));
+        try!(self.depot_client.fetch_package(ident, self.cache_artifact_path, ui.progress()));
         Ok(())
     }
 
@@ -291,8 +295,13 @@ impl<'a> InstallTask<'a> {
                                                      ident.to_string())));
         }
 
-        let artifact_target = try!(artifact.target());
-        try!(artifact_target.validate());
+        if self.ignore_target {
+            info!("Skipping target validation for this package.");
+        } else {
+            let artifact_target = try!(artifact.target());
+            try!(artifact_target.validate());
+        }
+
 
         let nwr = try!(artifact::artifact_signer(&artifact.path));
         if let Err(_) = SigKeyPair::get_public_key_path(&nwr, self.cache_key_path) {

@@ -14,7 +14,7 @@
 
 //! Configuration for a Habitat Builder-API service
 
-use std::net;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
 use hab_net;
 use hab_net::config::{DEFAULT_GITHUB_URL, DEV_GITHUB_CLIENT_ID, DEV_GITHUB_CLIENT_SECRET,
@@ -28,11 +28,11 @@ use error::{Error, Result};
 #[derive(Debug)]
 pub struct Config {
     /// Public listening net address for HTTP requests
-    pub http_addr: net::SocketAddrV4,
+    pub http_addr: SocketAddr,
     /// Depot's configuration
     pub depot: depot::Config,
     /// List of net addresses for routing servers to connect to
-    pub routers: Vec<net::SocketAddrV4>,
+    pub routers: Vec<SocketAddr>,
     /// URL to GitHub API
     pub github_url: String,
     /// Client identifier used for GitHub API requests
@@ -41,12 +41,14 @@ pub struct Config {
     pub github_client_secret: String,
     /// Path to UI files to host over HTTP. If not set the UI will be disabled.
     pub ui_root: Option<String>,
+    /// Whether to log events for funnel metrics
+    pub events_enabled: bool,
 }
 
 impl Config {
     /// Set the port of the http listener
     pub fn set_port(&mut self, port: u16) -> &mut Self {
-        self.http_addr = net::SocketAddrV4::new(*self.http_addr.ip(), port);
+        self.http_addr.set_port(port);
         self
     }
 }
@@ -54,13 +56,14 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            http_addr: net::SocketAddrV4::new(net::Ipv4Addr::new(0, 0, 0, 0), 9636),
-            routers: vec![net::SocketAddrV4::new(net::Ipv4Addr::new(127, 0, 0, 1), 5562)],
+            http_addr: SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 9636)),
+            routers: vec![SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 5562))],
             depot: depot::Config::default(),
             github_url: DEFAULT_GITHUB_URL.to_string(),
             github_client_id: DEV_GITHUB_CLIENT_ID.to_string(),
             github_client_secret: DEV_GITHUB_CLIENT_SECRET.to_string(),
             ui_root: None,
+            events_enabled: false, // TODO: change to default to true later
         }
     }
 }
@@ -80,21 +83,25 @@ impl ConfigFile for Config {
         try!(toml.parse_into("cfg.depot.datastore_addr", &mut cfg.depot.datastore_addr));
         try!(toml.parse_into("cfg.github.url", &mut cfg.github_url));
         try!(toml.parse_into("cfg.github.url", &mut cfg.depot.github_url));
-        if !try!(toml.parse_into("cfg.github.client_id", &mut cfg.github_client_id)) {
+        try!(toml.parse_into("cfg.github.client_id", &mut cfg.github_client_id));
+        if cfg.github_client_id.is_empty() {
             return Err(Error::from(hab_net::Error::RequiredConfigField("github.client_id")));
         }
         try!(toml.parse_into("cfg.github.client_id", &mut cfg.depot.github_client_id));
-        if !try!(toml.parse_into("cfg.github.client_secret", &mut cfg.github_client_secret)) {
+        try!(toml.parse_into("cfg.github.client_secret", &mut cfg.github_client_secret));
+        if cfg.github_client_secret.is_empty() {
             return Err(Error::from(hab_net::Error::RequiredConfigField("github.client_secret")));
         }
         try!(toml.parse_into("cfg.github.client_secret",
                              &mut cfg.depot.github_client_secret));
+        try!(toml.parse_into("cfg.events_enabled", &mut cfg.events_enabled));
+        try!(toml.parse_into("cfg.events_enabled", &mut cfg.depot.events_enabled));
         Ok(cfg)
     }
 }
 
 impl RouteAddrs for Config {
-    fn route_addrs(&self) -> &Vec<net::SocketAddrV4> {
+    fn route_addrs(&self) -> &Vec<SocketAddr> {
         &self.routers
     }
 }

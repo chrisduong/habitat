@@ -22,6 +22,8 @@ extern crate hyper;
 extern crate log;
 extern crate pbr;
 extern crate rustc_serialize;
+extern crate serde;
+extern crate serde_json;
 extern crate tee;
 extern crate url;
 
@@ -41,13 +43,13 @@ use hyper::status::StatusCode;
 use hyper::header::{Authorization, Bearer};
 use hyper::Url;
 use protocol::{depotsrv, net};
-use rustc_serialize::json;
-use rustc_serialize::Decodable;
+use rustc_serialize::{json, Decodable};
 use tee::TeeReader;
 
 header! { (XFileName, "X-Filename") => [String] }
 header! { (ETag, "ETag") => [String] }
 
+include!(concat!(env!("OUT_DIR"), "/serde_types.rs"));
 
 #[derive(RustcDecodable)]
 pub struct PackageResults<T>
@@ -155,9 +157,42 @@ impl Client {
         };
         match result {
             Ok(Response { status: StatusCode::Created, .. }) => Ok(()),
-            Ok(response) => Err(err_from_response(response)),
+            Ok(response) => {
+                if response.status == StatusCode::Unauthorized {
+                    Err(Error::APIError(response.status,
+                                        "Your GitHub token requires both user:email and read:org \
+                                         permissions."
+                                            .to_string()))
+                } else {
+                    Err(err_from_response(response))
+                }
+            }
             Err(e) => Err(Error::from(e)),
         }
+    }
+
+    /// Download a secret key from a remote Depot to the given filepath.
+    ///
+    /// # Failures
+    ///
+    /// * Remote Depot is not available
+    /// * File cannot be read
+    ///
+    /// # Panics
+    ///
+    /// * Authorization token was not set on client
+    pub fn fetch_origin_secret_key(&self, origin: &str, token: &str) -> Result<OriginSecretKey> {
+        let mut res =
+            try!(self.add_authz(self.inner.get(&format!("origins/{}/secret_keys/latest", origin)),
+                           token)
+                .send());
+        if res.status != StatusCode::Ok {
+            return Err(err_from_response(res));
+        }
+        let mut encoded = String::new();
+        try!(res.read_to_string(&mut encoded));
+        let key = serde_json::from_str(&encoded).unwrap();
+        Ok(key)
     }
 
     /// Upload a secret origin key to a remote Depot.
@@ -214,7 +249,7 @@ impl Client {
     /// * Remote Depot is not available
     /// * File cannot be created and written to
     pub fn fetch_package<D, I, P: ?Sized>(&self,
-                                          ident: I,
+                                          ident: &I,
                                           dst_path: &P,
                                           progress: Option<D>)
                                           -> Result<PackageArchive>
@@ -239,8 +274,8 @@ impl Client {
     ///
     /// * Package cannot be found
     /// * Remote Depot is not available
-    pub fn show_package<I: Identifiable>(&self, ident: I) -> Result<depotsrv::Package> {
-        let mut res = try!(self.inner.get(&self.path_show_package(&ident)).send());
+    pub fn show_package<I: Identifiable>(&self, ident: &I) -> Result<depotsrv::Package> {
+        let mut res = try!(self.inner.get(&self.path_show_package(ident)).send());
 
         if res.status != StatusCode::Ok {
             return Err(err_from_response(res));

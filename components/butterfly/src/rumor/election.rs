@@ -28,12 +28,12 @@ use habitat_core::service::ServiceGroup;
 use protobuf::{Message, RepeatedField};
 
 use error::Result;
-use message::swim::{Election as ProtoElection, Election_Status, Rumor as ProtoRumor,
-                    Rumor_Type as ProtoRumor_Type};
+use message::swim::{Election as ProtoElection, Rumor as ProtoRumor, Rumor_Type as ProtoRumor_Type};
+pub use message::swim::Election_Status;
 use rumor::Rumor;
 
 /// An election.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, RustcEncodable)]
 pub struct Election {
     pub proto: ProtoRumor,
 }
@@ -145,8 +145,8 @@ impl Rumor for Election {
             false
         } else if other.get_term() >= self.get_term() &&
                   other.get_status() == Election_Status::Finished {
-            // If the new rumors term is bigger or equal to ours, and it has a leader, we take it as the
-            // leader and move on.
+            // If the new rumors term is bigger or equal to ours, and it has a leader, we take it as
+            // the leader and move on.
             *self = other;
             true
         } else if other.get_term() == self.get_term() &&
@@ -173,8 +173,8 @@ impl Rumor for Election {
             true
         } else {
             if self.get_member_id() >= other.get_member_id() {
-                // If we are equally suitable, and our id sorts before the other, we want to steal its
-                // votes, and mark it as having voted for us.
+                // If we are equally suitable, and our id sorts before the other, we want to steal
+                // it's votes, and mark it as having voted for us.
                 // println!("Self sorts equal or greater than other: {:?} {:?}",
                 //         self,
                 //         other);

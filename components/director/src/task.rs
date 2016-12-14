@@ -29,7 +29,7 @@ use hcore;
 use hcore::package::PackageIdent;
 use hsup::package::Package;
 use hsup::supervisor::{WEXITSTATUS, WIFEXITED, WIFSIGNALED, WTERMSIG, Pid};
-use hsup::util::signals;
+use hsup::manager::signals;
 use super::ServiceDef;
 use super::error::Error;
 
@@ -40,7 +40,6 @@ static LOGKEY: &'static str = "TASK";
 extern "C" {
     fn waitpid(pid: pid_t, status: *mut c_int, options: c_int) -> pid_t;
 }
-
 
 /// Where and with what command a Task runs
 /// This is most useful for testing.
@@ -148,7 +147,7 @@ impl Task {
 
         args.insert(0, "start".to_string());
         args.insert(1, self.service_def.ident.to_string());
-        args.push("--listen-peer".to_string());
+        args.push("--listen-gossip".to_string());
         args.push(self.exec_params.gossip_listen.to_string());
         args.push("--listen-http".to_string());
         args.push(self.exec_params.sidecar_listen.to_string());
@@ -218,7 +217,6 @@ impl Task {
                 .name(String::from(name.clone()))
                 .spawn(move || -> Result<()> { child_reader(&mut child, name) }));
             debug!("Spawned child reader");
-
         } else {
             outputln!("{} already started", &self.service_def.to_string());
         }
@@ -301,7 +299,6 @@ impl Task {
         PathBuf::from(&self.exec_ctx.service_root).join("hab-director")
     }
 
-
     pub fn pid_file(&self) -> PathBuf {
         let sd = &self.service_def.to_string().replace(".", "-");
         let filename = format!("{}.pid", sd);
@@ -375,7 +372,7 @@ impl Task {
         let wait = match self.pid {
             Some(ref pid) => {
                 outputln!("Stopping {}", self.service_def.to_string());
-                let _ = signals::send_signal_to_pid(*pid, signals::Signal::SIGTERM);
+                let _ = signals::send_signal(*pid, signals::Signal::SIGTERM as u32);
                 true
             }
             None => {
@@ -391,7 +388,7 @@ impl Task {
                     outputln!("{} process failed to stop with SIGTERM; sending SIGKILL",
                               self.service_def.to_string());
                     if let Some(pid) = self.pid {
-                        let _ = signals::send_signal_to_pid(pid, signals::Signal::SIGKILL);
+                        let _ = signals::send_signal(pid, signals::Signal::SIGKILL as u32);
                     }
                     break;
                 }
@@ -435,16 +432,13 @@ fn child_reader(child: &mut Child, child_name: String) -> Result<()> {
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddrV4;
     use std::path::PathBuf;
     use std::str::FromStr;
 
-    // it's in lib.rs
     use super::super::ServiceDef;
-
     use super::*;
 
     fn get_test_dc() -> Task {
@@ -457,7 +451,7 @@ mod tests {
         Task::new(exec_ctx, exec_params, sd)
     }
 
-    /// parse args, inject listen-peer and listen-http, no peer
+    /// parse args, inject listen-gossip and listen-http, no peer
     #[test]
     fn cmd_args_parsing_no_peer() {
         let dc = get_test_dc();
@@ -468,7 +462,7 @@ mod tests {
                  "core/redis",
                  "-v",
                  "-foo=bar",
-                 "--listen-peer",
+                 "--listen-gossip",
                  "127.0.0.1:9000",
                  "--listen-http",
                  "127.0.0.1:8000",
@@ -478,7 +472,7 @@ mod tests {
                  "someorg"]);
     }
 
-    /// parse args, inject listen-peer, listen-http, peer
+    /// parse args, inject listen-gossip, listen-http, peer
     #[test]
     fn cmd_args_parsing_peer() {
         let mut dc = get_test_dc();
@@ -492,7 +486,7 @@ mod tests {
                  "core/redis",
                  "-v",
                  "-foo=bar",
-                 "--listen-peer",
+                 "--listen-gossip",
                  "127.0.0.1:9000",
                  "--listen-http",
                  "127.0.0.1:8000",
@@ -503,7 +497,6 @@ mod tests {
                  "--peer",
                  "127.0.0.1:9876"]);
     }
-
 
     /// test the pid filename using the default service directory
     #[test]

@@ -1,31 +1,92 @@
 pushd c:\projects\habitat
 
-$RunTests = (git diff master --name-only | 
-                where-object {$_ -like 'components/*'} | 
-                foreach-object { $_ -replace 'components/(\w+-*\w*)/.*$', '$1'} | 
-                sort-object -unique | 
-                where-object {($env:HAB_COMPONENTS -split ';') -contains $_}
-            ).count -ge 1
+function Test-ComponentChanged ($path) {
+    $component = $path -replace 'components/(\w+-*\w*)/.*$', '$1'
+    ($env:HAB_COMPONENTS -split ';') -contains $component
+}
 
-foreach ($BuildAction in ($env:hab_build_action -split ';')) {
-    if (($RunTests -or (test-path env:HAB_FORCE_BUILD)) -and ($BuildAction -like 'build')) {
-        Write-Host "Building hab..."
-        pushd "c:/projects/habitat/components/hab"
-        cargo build
-        if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
-        popd
-        ./target/debug/hab.exe --version
-        if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}            
+function Test-PullRequest() {
+    ($env:APPVEYOR_REPO_BRANCH -like 'master') -and
+        (test-path env:/APPVEYOR_PULL_REQUEST_NUMBER) -and 
+        (-not [string]::IsNullOrEmpty($env:APPVEYOR_PULL_REQUEST_NUMBER))
+}
+
+function Test-SentinelBuild() {
+    $env:APPVEYOR_REPO_BRANCH -like 'sentinel*'
+}
+
+function Test-SourceChanged {
+    $files = if (Test-PullRequest -or Test-SentinelBuild) {
+        # for pull requests or sentinel builds diff 
+        # against master
+        git diff master --name-only        
+    } else {
+        # for master builds, check against the last merge
+        git show :/^Merge --pretty=format:%H -m --name-only    
     }
-    elseif (($RunTests -or (test-path env:HAB_FORCE_TEST)) -and ($BuildAction -like 'test')) {
-        foreach ($component in ($env:hab_components -split ';')) {
-            pushd "c:/projects/habitat/components/$component"
-            cargo test
-            if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
-            popd
+
+    $BuildFiles = "appveyor.yml", "build.ps1", "support/ci/appveyor.ps1", "support/ci/appveyor.bat", 
+                  "Cargo.toml", "Cargo.lock"
+    ($files | 
+        where-object {
+            ($BuildFiles -contains $_ ) -or
+            (($_ -like 'components/*') -and 
+                (Test-ComponentChanged $_))
         }
+    ).count -ge 1
+} 
+
+pushd "c:/projects/habitat"
+Write-Host "Configuring build environment"
+./build.ps1 -Configure -SkipBuild
+
+
+if (Test-SourceChanged -or (test-path env:HAB_FORCE_TEST)) {
+    foreach ($BuildAction in ($env:hab_build_action -split ';')) {
+        if ($BuildAction -like 'build') {
+            
+            Write-Host "Building hab..."
+            Write-Host ""
+
+            ./build.ps1 -Path "components/hab" -Release
+            if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+            ./target/release/hab.exe --version
+            if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}  
+
+        }
+        elseif ($BuildAction -like 'test') {
+            foreach ($component in ($env:hab_components -split ';')) {
+                pushd "c:/projects/habitat/components/$component"
+                Write-Host "Testing $component"
+                Write-Host ""
+                cargo test
+                if ($LASTEXITCODE -ne 0) {exit $LASTEXITCODE}
+                popd
+            }
+        }
+        else {
+            Write-Warning "Unsupported Build Action: $BuildAction."
+        }  
     }
-    else {
-        Write-Host "Nothing changed in ported crates. Skipping $BuildAction."
+
+    ## Prep artifact for publishing.
+    $HabArchiveParams = @{
+        Path = "./target/release/hab.exe", 
+                "C:\ProgramData\chocolatey\lib\habitat_native_dependencies\builds\bin\archive.dll", 
+                "C:\ProgramData\chocolatey\lib\habitat_native_dependencies\builds\bin\libeay32.dll",
+                "C:\ProgramData\chocolatey\lib\habitat_native_dependencies\builds\bin\ssleay32.dll",
+                "C:\ProgramData\chocolatey\lib\habitat_native_dependencies\builds\bin\zlib.dll",
+                "C:\ProgramData\chocolatey\lib\habitat_native_dependencies\builds\bin\libzmq.dll",
+                "C:/Windows/System32/vcruntime140.dll"
+        DestinationPath = "c:/projects/habitat/windows/x86_64/hab-$env:APPVEYOR_BUILD_VERSION-x86_64-windows.zip"
     }
+    mkdir "c:/projects/habitat/windows/x86_64" -Force
+    Compress-Archive  @HabArchiveParams
+    Compress-Archive ./windows -DestinationPath "./hab-$env:APPVEYOR_BUILD_VERSION-x86_64-windows.zip"
+
+    Write-Host "Created artifact: "
+    ls $HabArchiveParams.DestinationPath
+}
+else {
+    Write-Host "Nothing changed in Windows ported crates."
 }

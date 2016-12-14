@@ -37,10 +37,12 @@
 //! it instead of the longer `Result` form.
 
 use std::io;
+use std::env;
 use std::error;
 use std::ffi;
 use std::fmt;
 use std::net;
+use std::num;
 use std::result;
 use std::str;
 use std::string;
@@ -49,11 +51,10 @@ use std::sync::mpsc;
 use ansi_term::Colour::Red;
 use handlebars;
 use hcore::package::Identifiable;
+use butterfly;
 use hyper;
 use rustc_serialize::json;
 use toml;
-use uuid;
-use wonder::actor;
 
 use common;
 use depot_client;
@@ -97,10 +98,11 @@ impl SupError {
 /// All the kinds of errors we produce.
 #[derive(Debug)]
 pub enum Error {
-    ActorError(actor::ActorError),
+    ButterflyError(butterfly::error::Error),
     CommandNotImplemented,
     DbInvalidPath,
     DepotClient(depot_client::Error),
+    EnvJoinPathsError(env::JoinPathsError),
     ExecCommandNotFound(String),
     FileNotFound(String),
     HabitatCommon(common::Error),
@@ -115,6 +117,7 @@ pub enum Error {
     InvalidBinding(String),
     InvalidKeyParameter(String),
     InvalidPidFile,
+    InvalidPort(num::ParseIntError),
     InvalidServiceGroupString(String),
     Io(io::Error),
     IPFailed,
@@ -139,7 +142,6 @@ pub enum Error {
     TryRecvError(mpsc::TryRecvError),
     UnknownTopology(String),
     UnpackFailed,
-    UuidParseError(uuid::ParseError),
 }
 
 /// Our result type alias, for easy coding.
@@ -150,7 +152,7 @@ impl fmt::Display for SupError {
     // verbose on, and print it.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let content = match self.err {
-            Error::ActorError(ref err) => format!("Actor returned error: {:?}", err),
+            Error::ButterflyError(ref err) => format!("Butterfly error: {}", err),
             Error::ExecCommandNotFound(ref c) => {
                 format!("`{}' was not found on the filesystem or in PATH", c)
             }
@@ -162,6 +164,7 @@ impl fmt::Display for SupError {
             Error::CommandNotImplemented => format!("Command is not yet implemented!"),
             Error::DbInvalidPath => format!("Invalid filepath to internal datastore"),
             Error::DepotClient(ref err) => format!("{}", err),
+            Error::EnvJoinPathsError(ref err) => format!("{}", err),
             Error::FileNotFound(ref e) => format!("File not found at: {}", e),
             Error::HealthCheck(ref e) => format!("Health Check failed: {}", e),
             Error::HookFailed(ref t, ref e, ref o) => {
@@ -174,6 +177,9 @@ impl fmt::Display for SupError {
             }
             Error::InvalidKeyParameter(ref e) => {
                 format!("Invalid parameter for key generation: {:?}", e)
+            }
+            Error::InvalidPort(ref e) => {
+                format!("Invalid port number in package expose metadata: {}", e)
             }
             Error::InvalidPidFile => format!("Invalid child process PID file"),
             Error::InvalidServiceGroupString(ref e) => {
@@ -225,7 +231,6 @@ impl fmt::Display for SupError {
             Error::TryRecvError(ref err) => format!("{}", err),
             Error::UnknownTopology(ref t) => format!("Unknown topology {}!", t),
             Error::UnpackFailed => format!("Failed to unpack a package"),
-            Error::UuidParseError(ref e) => format!("Uuid Parse Error: {:?}", e),
         };
         let cstring = Red.bold().paint(content).to_string();
         let progname = PROGRAM_NAME.as_str();
@@ -243,15 +248,17 @@ impl fmt::Display for SupError {
 impl error::Error for SupError {
     fn description(&self) -> &str {
         match self.err {
-            Error::ActorError(_) => "A running actor responded with an error",
+            Error::ButterflyError(ref err) => err.description(),
             Error::ExecCommandNotFound(_) => "Exec command was not found on filesystem or in PATH",
             Error::HandlebarsRenderError(ref err) => err.description(),
             Error::HandlebarsTemplateFileError(ref err) => err.description(),
             Error::HabitatCommon(ref err) => err.description(),
             Error::HabitatCore(ref err) => err.description(),
+
             Error::CommandNotImplemented => "Command is not yet implemented!",
             Error::DbInvalidPath => "A bad filepath was provided for an internal datastore",
             Error::DepotClient(ref err) => err.description(),
+            Error::EnvJoinPathsError(ref err) => err.description(),
             Error::FileNotFound(_) => "File not found",
             Error::HealthCheck(_) => "Health Check returned an unknown status code",
             Error::HookFailed(_, _, _) => "Hook failed to run",
@@ -259,6 +266,7 @@ impl error::Error for SupError {
             Error::HyperError(ref err) => err.description(),
             Error::InvalidBinding(_) => "Invalid binding parameter",
             Error::InvalidKeyParameter(_) => "Key parameter error",
+            Error::InvalidPort(_) => "Invalid port number in package expose metadata",
             Error::InvalidPidFile => "Invalid child process PID file",
             Error::InvalidServiceGroupString(_) => {
                 "Service group strings must be in service.group format (example: redis.default)"
@@ -295,7 +303,6 @@ impl error::Error for SupError {
             Error::TryRecvError(_) => "A channel failed to recieve a response",
             Error::UnknownTopology(_) => "Unknown topology",
             Error::UnpackFailed => "Failed to unpack a package",
-            Error::UuidParseError(_) => "Uuid Parse Error",
         }
     }
 }
@@ -312,6 +319,12 @@ fn toml_parser_string(errs: &Vec<toml::ParserError>) -> String {
 impl From<net::AddrParseError> for SupError {
     fn from(err: net::AddrParseError) -> SupError {
         sup_error!(Error::NetParseError(err))
+    }
+}
+
+impl From<butterfly::error::Error> for SupError {
+    fn from(err: butterfly::error::Error) -> SupError {
+        sup_error!(Error::ButterflyError(err))
     }
 }
 
@@ -345,12 +358,6 @@ impl From<depot_client::Error> for SupError {
     }
 }
 
-impl From<uuid::ParseError> for SupError {
-    fn from(err: uuid::ParseError) -> SupError {
-        sup_error!(Error::UuidParseError(err))
-    }
-}
-
 impl From<ffi::NulError> for SupError {
     fn from(err: ffi::NulError) -> SupError {
         sup_error!(Error::NulError(err))
@@ -360,6 +367,12 @@ impl From<ffi::NulError> for SupError {
 impl From<io::Error> for SupError {
     fn from(err: io::Error) -> SupError {
         sup_error!(Error::Io(err))
+    }
+}
+
+impl From<env::JoinPathsError> for SupError {
+    fn from(err: env::JoinPathsError) -> SupError {
+        sup_error!(Error::EnvJoinPathsError(err))
     }
 }
 
@@ -384,12 +397,6 @@ impl From<str::Utf8Error> for SupError {
 impl From<mpsc::TryRecvError> for SupError {
     fn from(err: mpsc::TryRecvError) -> SupError {
         sup_error!(Error::TryRecvError(err))
-    }
-}
-
-impl From<actor::ActorError> for SupError {
-    fn from(err: actor::ActorError) -> Self {
-        sup_error!(Error::ActorError(err))
     }
 }
 

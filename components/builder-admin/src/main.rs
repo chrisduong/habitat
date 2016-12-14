@@ -44,14 +44,14 @@ fn main() {
 }
 
 fn app<'a, 'b>() -> clap::App<'a, 'b> {
-    clap_app!(BuilderApi =>
+    clap_app!(BuilderAdmin =>
         (version: VERSION)
         (about: "Habitat builder-admin")
         (@setting VersionlessSubcommands)
         (@setting SubcommandRequiredElseHelp)
         (@arg config: -c --config +takes_value +global
             "Filepath to configuration file. [default: /hab/svc/hab-builder-admin/config.toml]")
-        (@arg port: --port +takes_value +global "Listen port. [default: 9636]")
+        (@arg port: --port +takes_value +global "Listen port. [default: 8080]")
         (@subcommand start =>
             (about: "Run the builder-admin server")
         )
